@@ -2,25 +2,19 @@
 This file patches the flamingo gated cross attention into the T5 decoder.
 """
 import contextlib
+import dataclasses
 import logging
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional
-import dataclasses
 from dataclasses import dataclass
+from typing import Dict, List, Optional
 
 import torch
-import torch.nn.functional as F
-from einops import rearrange
 from torch import nn
 from transformers import PreTrainedModel
-from transformers.modeling_outputs import (BaseModelOutputWithPast,
-                                           CausalLMOutputWithPast,
-                                           CausalLMOutputWithCrossAttentions)
-from transformers.models.t5.modeling_t5 import (T5Block, T5LayerCrossAttention,
-                                                T5LayerFF,
-                                                T5LayerSelfAttention)
+from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
 
 from .gated_xattn import HijackedLMBlock
+from .t5_decoder import T5ForCausalLM
 
 
 @contextlib.contextmanager
@@ -40,9 +34,11 @@ class FlamingoConfig:
     """Configuration class to store the configuration of a `FlamingoT5` model."""
     dim: int                # dimension of the token embedding
     dim_media: int          # dimension of the media embedding
+    xattn_heads: int        # number of cross attention heads
     xattn_dim_head: int     # dimension of the cross attention heads
     xattn_every: int = 1    # how often to insert a gated cross attention layer
     xattn_ff_mult: int = 4  # multiplier for the feedforward layer in the gated cross attention
+    lm_name_or_path: str    # name or path of the pretrained LM model
 
 
 @dataclass
@@ -171,7 +167,7 @@ class FlamingoDecoderBaseModel(ABC, PreTrainedModel):
                 past_key_values of the language model
             xattn_past_key_values (tuple):
                 past_key_values of the cross attention on media
-            labels (Tensor): 
+            labels (Tensor):
                 It is possible to pass the exact value as input_ids also as labels. If present, the output will contain a CE loss of the next token prediction.
                 optional, defaults to None
             use_cache (bool): whether to return the inner keys and values. Used to speed up text generation at inference. defaults to False
@@ -219,3 +215,23 @@ class FlamingoDecoderBaseModel(ABC, PreTrainedModel):
         out.xattn_past_key_values = tuple(xattn_past_key_values) if use_cache else None
 
         return out
+
+
+class FlamingoT5Decoder(FlamingoDecoderBaseModel):
+    """T5 decoder model patched with Flamingo cross attention layers"""
+    config: FlamingoConfig
+
+    def __init__(self, config: FlamingoConfig, shared_embedding, **kwargs):
+        super().__init__(config, **kwargs)
+        assert config.lm_name_or_path is not None and config.lm_name_or_path.startswith("t5"), f"Unexpected lm {config.lm_name_or_path}"
+        self.lm = T5ForCausalLM.from_pretrained(config.lm_name_or_path, shared_embedding)
+        assert self.lm.config.d_model == config.dim, \
+            f"LM and Flamingo model must have the same token embedding dimension. Got {self.lm.config.d_model} and {config.dim}"
+        self.config = config
+        # hijack lm layers (t5 stack: list[T5Block])
+        self._init_layers(self.lm.decoder.block)
+
+    def get_modified_layers(self) -> List[HijackedLMBlock]:
+        if self.config.xattn_every == 1:
+            return self.lm.decoder.layers
+        return filter(lambda layer: isinstance(layer, HijackedLMBlock), self.lm.decoder.layers)
