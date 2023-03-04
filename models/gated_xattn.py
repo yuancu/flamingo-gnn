@@ -3,6 +3,8 @@ The gated cross attention is built from lucidrains and dhansmair's implementatio
 The 'media' in the code refers to the other modality, it can be knowledge graph, passage
 embedding, image etc.
 """
+from typing import Tuple
+
 import torch
 from einops import rearrange
 from einops_exts import rearrange_many
@@ -154,3 +156,68 @@ class GatedCrossAttentionBlock(nn.Module):
         x = self.attn(x, media, media_mask) * self.attn_gate.tanh() + x
         x = self.ff(x) * self.ff_gate.tanh()  + x
         return x
+
+
+class HijackedLMBlock(nn.Module):
+    """
+    A block that wraps a gated cross-attention layer, followed by a LM layer.
+    We replace the original layers in the LM with these at a certain frequency
+    to introduce the xattn layer. This layer mimics the functionality and behavior
+    of the underlying LM block. This way, the LM can be used in the same way as before,
+    and we can do the conditioning without altering the LM implementation.
+
+    One drawback of this approach is that we cannot pass the visual features to forward()
+    directly, but instead we need to pass them before the actual forward pass, via a
+    side-channel, which is the condition() method. In addition, when use_cache is used,
+    the cached keys and values for the xattn layers need to be retrieved separately from
+    the kv_output property.
+    """
+
+    def __init__(self, lm_block, **kwargs):
+        super().__init__()
+
+        self.xattn_block = GatedCrossAttentionBlock(**kwargs)
+        self.lm_block = lm_block
+        self.media = None
+        self.media_mask = None
+        self.xattn_layer_past = None
+        self.kv_output = None
+
+    def condition(self, media: torch.Tensor, media_mask: torch.Tensor, xattn_layer_past=None) -> None:
+        """
+        conditioning. Called from outside of the LM before passing the text input to the LM.
+        This way, the gated cross-attention layers get informed about the media input
+        without the need to pipe the media input through the LM forward() function.
+
+        xattn_layer_past can contain the cached cross-attention keys and values (computed
+        from the media input). Passing them is useful to speed up the autoregressive text
+        generation where the keys and values will be the same for every word, since the
+        media input doesn't change.
+        If both media and xattn_layer past are passed, media will be ignored in the xattn layers.
+        """
+        self.media = media
+        self.media_mask = media_mask
+        self.xattn_layer_past = xattn_layer_past
+
+    def forward(
+        self,
+        hidden_states: Tuple[torch.Tensor] | None,
+        use_cache: bool | None = False,
+        **kwargs
+    ):
+        """
+        This forward function mimics forward() of T5Block, so it has the same input and output.
+        """
+        
+        # pass through xattn
+        hidden_states, kv = self.xattn_block(
+            y=hidden_states,
+            visual_features=self.media,
+            media_locations=self.media_mask,
+            previous_kv=self.xattn_layer_past,
+            output_kv=use_cache
+        )
+        self.kv_output = kv
+        
+        # pass through original LM layer
+        return self.lm_block(hidden_states, use_cache=use_cache, **kwargs)
