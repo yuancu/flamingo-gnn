@@ -46,18 +46,18 @@ class T5GATOutput(ModelOutput):
 
 
 class T5DragonEncoder(nn.Module):
-    def __init__(self, args=Namespace(), model_name="t5-base", k=5, n_ntype=4, n_etype=38, n_concept=799273, concept_dim=200,
-                 concept_in_dim=1024, n_attention_head=2, fc_dim=200, n_fc_layer=0, p_emb=0.2, p_gnn=0.2, p_fc=0.2,
-                 pretrained_concept_emb=None, freeze_ent_emb=True, init_range=0.02, ie_dim=200, info_exchange=True,
+    def __init__(self, args=Namespace(), model_name="t5-base", k=5, n_ntype=4, n_etype=38, n_node=799273, node_dim=200,
+                 node_in_dim=1024, n_attention_head=2, fc_dim=200, n_fc_layer=0, p_emb=0.2, p_gnn=0.2, p_fc=0.2,
+                 pretrained_node_emb=None, freeze_ent_emb=True, init_range=0.02, ie_dim=200, info_exchange=True,
                  ie_layer_num=1, sep_ie_layers=False, layer_id=-1):
         super().__init__()
         self.n_ntype = n_ntype
         self.n_etype = n_etype
         self.lmgnn, self.loading_info = T5GNN.from_pretrained(model_name,
             output_loading_info=True, args=args, k=k, n_ntype=n_ntype, n_etype=n_etype,
-            n_concept=n_concept, concept_dim=concept_dim, concept_in_dim=concept_in_dim,
+            n_node=n_node, node_dim=node_dim, node_in_dim=node_in_dim,
             n_attention_head=n_attention_head, fc_dim=fc_dim, n_fc_layer=n_fc_layer,
-            p_emb=p_emb, p_gnn=p_gnn, p_fc=p_fc, pretrained_concept_emb=pretrained_concept_emb,
+            p_emb=p_emb, p_gnn=p_gnn, p_fc=p_fc, pretrained_node_emb=pretrained_node_emb,
             freeze_ent_emb=freeze_ent_emb, init_range=init_range, ie_dim=ie_dim,
             info_exchange=info_exchange, ie_layer_num=ie_layer_num,  sep_ie_layers=sep_ie_layers,
             layer_id=layer_id)
@@ -177,8 +177,8 @@ class T5DragonEncoder(nn.Module):
 
 class T5GNN(nn.Module):
     def __init__(self, config, args, k, n_ntype, n_etype,
-                 n_concept, concept_dim, concept_in_dim, n_attention_head,
-                 fc_dim, n_fc_layer, p_emb, p_gnn, p_fc, pretrained_concept_emb,
+                 n_node, node_dim, node_in_dim, n_attention_head,
+                 fc_dim, n_fc_layer, p_emb, p_gnn, p_fc, pretrained_node_emb,
                  freeze_ent_emb, init_range, ie_dim, info_exchange, ie_layer_num,
                  sep_ie_layers, layer_id):
         '''
@@ -191,14 +191,14 @@ class T5GNN(nn.Module):
         self.init_range = init_range
 
         self.k = k
-        self.concept_dim = concept_dim
+        self.node_dim = node_dim
         self.n_attention_head = n_attention_head
         self.activation = nn.GELU()
         if k >= 0:
-            self.concept_emb = CustomizedEmbedding(concept_num=n_concept, concept_out_dim=concept_dim, use_contextualized=False, concept_in_dim=concept_in_dim, pretrained_concept_emb=pretrained_concept_emb, freeze_ent_emb=freeze_ent_emb)
-            self.pooler = MultiheadAttPoolLayer(n_attention_head, config.hidden_size, concept_dim)
+            self.node_emb = CustomizedEmbedding(node_num=n_node, node_out_dim=node_dim, use_contextualized=False, node_in_dim=node_in_dim, pretrained_node_emb=pretrained_node_emb, freeze_ent_emb=freeze_ent_emb)
+            self.pooler = MultiheadAttPoolLayer(n_attention_head, config.hidden_size, node_dim)
 
-        concat_vec_dim = concept_dim * 2 + config.hidden_size if k>=0 else config.hidden_size
+        concat_vec_dim = node_dim * 2 + config.hidden_size if k>=0 else config.hidden_size
         self.fc = MLP(concat_vec_dim, fc_dim, 1, n_fc_layer, p_fc, layer_norm=True)
 
         self.dropout_e = nn.Dropout(p_emb)
@@ -207,24 +207,24 @@ class T5GNN(nn.Module):
         if init_range > 0:
             self.apply(self._init_weights)
 
-        self.backbone = TextKGMessagePassing(config, args=args, k=k, n_ntype=n_ntype, n_etype=n_etype, dropout=p_gnn, concept_dim=concept_dim, ie_dim=ie_dim, p_fc=p_fc, info_exchange=info_exchange, ie_layer_num=ie_layer_num, sep_ie_layers=sep_ie_layers) #this is equivalent to BertModel
+        self.backbone = TextKGMessagePassing(config, args=args, k=k, n_ntype=n_ntype, n_etype=n_etype, dropout=p_gnn, node_dim=node_dim, ie_dim=ie_dim, p_fc=p_fc, info_exchange=info_exchange, ie_layer_num=ie_layer_num, sep_ie_layers=sep_ie_layers) #this is equivalent to BertModel
 
         self.layer_id = layer_id
-        self.cpnet_vocab_size = n_concept
+        self.cpnet_vocab_size = n_node
 
         if args.link_task:
             if args.link_decoder == 'DistMult':
-                self.linkpred = DistMultDecoder(args, num_rels=n_etype, h_dim=concept_dim)
+                self.linkpred = DistMultDecoder(args, num_rels=n_etype, h_dim=node_dim)
             elif args.link_decoder == 'TransE':
-                self.linkpred = TransEDecoder(args, num_rels=n_etype, h_dim=concept_dim)
+                self.linkpred = TransEDecoder(args, num_rels=n_etype, h_dim=node_dim)
             elif args.link_decoder == 'RotatE':
-                self.linkpred = RotatEDecoder(args, num_rels=n_etype, h_dim=concept_dim)
+                self.linkpred = RotatEDecoder(args, num_rels=n_etype, h_dim=node_dim)
             else:
                 raise NotImplementedError()
             if args.link_proj_headtail:
-                self.linkpred_proj = nn.Linear(concept_dim, concept_dim)
+                self.linkpred_proj = nn.Linear(node_dim, node_dim)
             if args.link_normalize_headtail == 3:
-                self.emb_LayerNorm = nn.LayerNorm(concept_dim)
+                self.emb_LayerNorm = nn.LayerNorm(node_dim)
 
     def _init_weights(self, module):
         if isinstance(module, (nn.Linear, nn.Embedding)):
@@ -265,9 +265,9 @@ class T5GNN(nn.Module):
         # GNN inputs
         node_ids[node_ids == 0] = self.cpnet_vocab_size + 2
         if self.k >= 0:
-            gnn_input = self.concept_emb(node_ids - 1, emb_data).to(node_type_ids.device)
+            gnn_input = self.node_emb(node_ids - 1, emb_data).to(node_type_ids.device)
         else:
-            gnn_input = torch.zeros((node_ids.size(0), node_ids.size(1), self.concept_dim)).float().to(node_type_ids.device)
+            gnn_input = torch.zeros((node_ids.size(0), node_ids.size(1), self.node_dim)).float().to(node_type_ids.device)
         gnn_input[:, 0] = 0
         gnn_input = self.dropout_e(gnn_input) #(batch_size, n_node, dim_node)
 
@@ -368,12 +368,12 @@ class TextKGMessagePassing(T5EncoderModel):
     When adapting to encoder-decoder architectures, the model inherits e.g. BartModel(embedding, encoder, decoder, ..),
     with the encoder is replaced by a GNN encoder, which inherits e.g. BartEncoder.
     """
-    def __init__(self, config, args, k, n_ntype, n_etype, dropout=0.2, concept_dim=200, ie_dim=200, p_fc=0.2, info_exchange=True, ie_layer_num=1, sep_ie_layers=False):
+    def __init__(self, config, args, k, n_ntype, n_etype, dropout=0.2, node_dim=200, ie_dim=200, p_fc=0.2, info_exchange=True, ie_layer_num=1, sep_ie_layers=False):
         '''
         k: the number of fusion layers
         n_ntype: number of node types
         n_etype: number of edge types
-        cocnept_dim: dimension of concept embedding
+        cocnept_dim: dimension of node embedding
         ie_dim: dimension of information exchange???
         '''
         super().__init__(config=config)
@@ -381,22 +381,22 @@ class TextKGMessagePassing(T5EncoderModel):
         self.n_ntype = n_ntype
         self.n_etype = n_etype
 
-        self.hidden_size = concept_dim
-        self.emb_node_type = nn.Linear(self.n_ntype, concept_dim // 2)
+        self.hidden_size = node_dim
+        self.emb_node_type = nn.Linear(self.n_ntype, node_dim // 2)
 
         self.basis_f = 'sin' #['id', 'linact', 'sin', 'none']
         if self.basis_f in ['id']:
-            self.emb_score = nn.Linear(1, concept_dim // 2)
+            self.emb_score = nn.Linear(1, node_dim // 2)
         elif self.basis_f in ['linact']:
-            self.B_lin = nn.Linear(1, concept_dim // 2)
-            self.emb_score = nn.Linear(concept_dim // 2, concept_dim // 2)
+            self.B_lin = nn.Linear(1, node_dim // 2)
+            self.emb_score = nn.Linear(node_dim // 2, node_dim // 2)
         elif self.basis_f in ['sin']:
-            self.emb_score = nn.Linear(concept_dim // 2, concept_dim // 2)
+            self.emb_score = nn.Linear(node_dim // 2, node_dim // 2)
 
         self.k = k
 
-        self.Vh = nn.Linear(concept_dim, concept_dim)
-        self.Vx = nn.Linear(concept_dim, concept_dim)
+        self.Vh = nn.Linear(node_dim, node_dim)
+        self.Vx = nn.Linear(node_dim, node_dim)
 
         self.activation = nn.GELU()
         self.dropout = nn.Dropout(dropout)
@@ -405,8 +405,8 @@ class TextKGMessagePassing(T5EncoderModel):
 
         shared_embedding = self.shared
         self.encoder = T5GAT(config, args, k=k, n_ntype=n_ntype, n_etype=n_etype,
-                                  hidden_size=concept_dim, dropout=dropout,
-                                  concept_dim=concept_dim, ie_dim=ie_dim, p_fc=p_fc,
+                                  hidden_size=node_dim, dropout=dropout,
+                                  node_dim=node_dim, ie_dim=ie_dim, p_fc=p_fc,
                                   info_exchange=info_exchange, ie_layer_num=ie_layer_num,
                                   sep_ie_layers=sep_ie_layers, shared_embedding=shared_embedding)
 
@@ -523,7 +523,7 @@ class TextKGMessagePassing(T5EncoderModel):
 class T5GAT(T5Stack):
     """The encoder model in TextKGMessagePassing."""
     def __init__(self, config, args, k, n_ntype, n_etype, hidden_size=200, dropout=0.2,
-                 concept_dim=200, ie_dim=200, p_fc=0.2, info_exchange=True, ie_layer_num=1,
+                 node_dim=200, ie_dim=200, p_fc=0.2, info_exchange=True, ie_layer_num=1,
                  sep_ie_layers=False, shared_embedding=None):
 
         # init with T5Stack
@@ -534,7 +534,7 @@ class T5GAT(T5Stack):
 
         self.args = args
         self.k = k
-        self.concept_dim = concept_dim
+        self.node_dim = node_dim
         self.num_hidden_layers = config.num_hidden_layers
         self.info_exchange = info_exchange
         if k >= 1:
@@ -546,11 +546,11 @@ class T5GAT(T5Stack):
             self.sent_dim = config.hidden_size
             self.sep_ie_layers = sep_ie_layers
             if sep_ie_layers:
-                self.ie_layers = nn.ModuleList([MLP(self.sent_dim + concept_dim, ie_dim, self.sent_dim + concept_dim, ie_layer_num, p_fc) for _ in range(k)])
+                self.ie_layers = nn.ModuleList([MLP(self.sent_dim + node_dim, ie_dim, self.sent_dim + node_dim, ie_layer_num, p_fc) for _ in range(k)])
             else:
-                self.ie_layer = MLP(self.sent_dim + concept_dim, ie_dim, self.sent_dim + concept_dim, ie_layer_num, p_fc)
+                self.ie_layer = MLP(self.sent_dim + node_dim, ie_dim, self.sent_dim + node_dim, ie_layer_num, p_fc)
             if self.args.residual_ie == 2:
-                self.ie_LayerNorm = nn.LayerNorm(self.sent_dim + concept_dim)
+                self.ie_LayerNorm = nn.LayerNorm(self.sent_dim + node_dim)
 
 
     def forward(
@@ -703,14 +703,14 @@ class T5GAT(T5Stack):
         head_mask = [None] * self.num_hidden_layers
 
         n_node = 200
-        _X = torch.zeros([bs * n_node, self.concept_dim]).to(device)
+        _X = torch.zeros([bs * n_node, self.node_dim]).to(device)
         n_edges = 3
         edge_index = torch.tensor([[1, 2, 3], [4, 5, 6]]).to(device)
         edge_type = torch.zeros(n_edges, dtype=torch.long).fill_(2).to(device)
         _node_type = torch.zeros([bs, n_node], dtype=torch.long).to(device)
         _node_type[:, 0] = 3
         _node_type = _node_type.view(-1)
-        _node_feature_extra = torch.zeros([bs * n_node, self.concept_dim]).to(device)
+        _node_feature_extra = torch.zeros([bs * n_node, self.node_dim]).to(device)
         return hidden_states, attention_mask, head_mask, _X, edge_index, edge_type, _node_type, _node_feature_extra
 
     def check_outputs(self, outputs, _X):
@@ -718,4 +718,4 @@ class T5GAT(T5Stack):
         seq_len = 100
         assert outputs[0].size() == (bs, seq_len, self.sent_dim)
         n_node = 200
-        assert _X.size() == (bs * n_node, self.concept_dim)
+        assert _X.size() == (bs * n_node, self.node_dim)

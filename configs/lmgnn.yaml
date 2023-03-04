@@ -29,7 +29,6 @@ default: &default
     subsample: 1.0  # The ratio to subsample the training set.
     n_train: -1  # Number of training examples to use. Setting it to -1 means using the `subsample` argument to determine the training set size instead; otherwise it will override the `subsample` argument.
     ent_emb_paths: ['data/cpnet/tzw.ent.npy']  # sources for entity embeddings
-    kg_vocab_path: 'data/cpnet/concept.txt'  # kg vocab file
     dataset: csqa  # dataset name
     data_dir: data  # Path to the data directory
     inhouse: True  # run in-house setting

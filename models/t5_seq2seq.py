@@ -1,3 +1,10 @@
+"""
+This model packs the encoder and the decoder into a seq2seq model with the help of
+the EncoderDecoderModel in transformers. The forward pass is different from the
+original implementation, as the encoder returns entity embeddings apart from the
+text token embeddings.
+"""
+
 from dataclasses import dataclass
 from typing import Optional, Tuple, Union, List
 import torch
@@ -15,7 +22,7 @@ class T5DragonOutput(Seq2SeqLMOutput):
     link_losses: Union[List, tuple] = None
 
 
-class T5DragonForPretrain(EncoderDecoderModel):
+class T5Seq2seq(EncoderDecoderModel):
     def forward(
         self,
         input_ids: Optional[torch.LongTensor] = None,
@@ -128,7 +135,7 @@ class T5DragonForPretrain(EncoderDecoderModel):
         encoder_outputs=None,
         token_type_ids=None,
         output_mask=None,
-        concept_ids=None,
+        node_ids=None,
         node_type_ids=None,
         node_scores=None,
         adj_lengths=None,
@@ -155,7 +162,7 @@ class T5DragonForPretrain(EncoderDecoderModel):
             "use_cache": use_cache,
             "token_type_ids": token_type_ids,
             "output_mask": output_mask,
-            "concept_ids": concept_ids,
+            "node_ids": node_ids,
             "node_type_ids": node_type_ids,
             "node_scores": node_scores,
             "adj_lengths": adj_lengths,

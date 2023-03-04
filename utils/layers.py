@@ -8,24 +8,24 @@ import torch.nn as nn
 
 
 class CustomizedEmbedding(nn.Module):
-    def __init__(self, concept_num, concept_in_dim, concept_out_dim, use_contextualized=False,
-                 pretrained_concept_emb=None, freeze_ent_emb=True, scale=1.0, init_range=0.02):
+    def __init__(self, node_num, node_in_dim, node_out_dim, use_contextualized=False,
+                 pretrained_node_emb=None, freeze_ent_emb=True, scale=1.0, init_range=0.02):
         super().__init__()
         self.scale = scale
         self.use_contextualized = use_contextualized
         if not use_contextualized:
-            self.emb = nn.Embedding(concept_num + 2, concept_in_dim)
-            if pretrained_concept_emb is not None:
+            self.emb = nn.Embedding(node_num + 2, node_in_dim)
+            if pretrained_node_emb is not None:
                 self.emb.weight.data.fill_(0)
-                self.emb.weight.data[:concept_num].copy_(pretrained_concept_emb)
+                self.emb.weight.data[:node_num].copy_(pretrained_node_emb)
             else:
                 self.emb.weight.data.normal_(mean=0.0, std=init_range)
             if freeze_ent_emb:
                 for p in self.emb.parameters():
                     p.requires_grad = False
 
-        if concept_in_dim != concept_out_dim:
-            self.cpt_transform = nn.Linear(concept_in_dim, concept_out_dim)
+        if node_in_dim != node_out_dim:
+            self.cpt_transform = nn.Linear(node_in_dim, node_out_dim)
             self.activation = nn.GELU()
 
     def forward(self, index, contextualized_emb=None):

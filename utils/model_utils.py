@@ -51,11 +51,11 @@ def construct_encoder(args, model_cls):
     print('n_ntype', n_ntype, 'n_etype', n_etype)
 
     model = model_cls(args, args.encoder_name_or_path, k=args.k,
-                n_ntype=n_ntype, n_etype=n_etype, n_concept=enity_num,
-                concept_dim=args.gnn_dim, concept_in_dim=entity_in_dim,
+                n_ntype=n_ntype, n_etype=n_etype, n_node=enity_num,
+                node_dim=args.gnn_dim, node_in_dim=entity_in_dim,
                 n_attention_head=args.att_head_num, fc_dim=args.fc_dim,
                 n_fc_layer=args.fc_layer_num, p_emb=args.dropouti,
-                p_gnn=args.dropoutg, p_fc=args.dropoutf, pretrained_concept_emb=entity_emb,
+                p_gnn=args.dropoutg, p_fc=args.dropoutf, pretrained_node_emb=entity_emb,
                 freeze_ent_emb=freeze_ent_emb, init_range=args.init_range,
                 ie_dim=args.ie_dim, info_exchange=args.info_exchange,
                 ie_layer_num=args.ie_layer_num, sep_ie_layers=args.sep_ie_layers,
