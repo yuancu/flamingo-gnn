@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 
 import torch
 from torch import nn
-from transformers import PreTrainedModel
+from transformers import PreTrainedModel, PretrainedConfig
 from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
 
 from .gated_xattn import HijackedLMBlock
@@ -30,15 +30,15 @@ def suppress_model_loading_warnings(suppress: bool = True):
 
 
 @dataclass
-class FlamingoConfig:
+class FlamingoConfig(PretrainedConfig):
     """Configuration class to store the configuration of a `FlamingoT5` model."""
     dim: int                # dimension of the token embedding
     dim_media: int          # dimension of the media embedding
+    lm_name_or_path: str    # name or path of the pretrained LM model
     xattn_heads: int        # number of cross attention heads
     xattn_dim_head: int     # dimension of the cross attention heads
     xattn_every: int = 1    # how often to insert a gated cross attention layer
     xattn_ff_mult: int = 4  # multiplier for the feedforward layer in the gated cross attention
-    lm_name_or_path: str    # name or path of the pretrained LM model
 
 
 @dataclass
@@ -185,7 +185,7 @@ class FlamingoDecoderBaseModel(ABC, PreTrainedModel):
         if media_mask is None and media is not None:
             # media is of shape (batch_size, n_latents, d_media)
             batch_size, n_latents = media.shape[:2]
-            media_mask = torch.ones(size=(batch_size, n_latents), dtype=torch.int, device=media_mask.device)
+            media_mask = torch.ones(size=(batch_size, n_latents), dtype=torch.long, device=media.device)
 
         # condition xattn layers
         for i, xattn in enumerate(self.get_modified_layers()):
@@ -233,5 +233,5 @@ class FlamingoT5Decoder(FlamingoDecoderBaseModel):
 
     def get_modified_layers(self) -> List[HijackedLMBlock]:
         if self.config.xattn_every == 1:
-            return self.lm.decoder.layers
-        return filter(lambda layer: isinstance(layer, HijackedLMBlock), self.lm.decoder.layers)
+            return self.lm.decoder.block
+        return filter(lambda layer: isinstance(layer, HijackedLMBlock), self.lm.decoder.block)

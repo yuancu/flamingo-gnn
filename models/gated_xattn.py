@@ -102,7 +102,7 @@ class MaskedCrossAttention(nn.Module):
         sim = einsum('... i d, ... j d -> ... i j', q, k)  # (batch, n_token, n_latents)
 
         if media_mask is not None:
-            sim = sim.masked_fill(~media_mask, float('-inf'))
+            sim = sim.masked_fill(media_mask.logical_not(), float('-inf'))
 
         # What is this for? For numerical stability?
         sim = sim - sim.amax(dim = -1, keepdim = True).detach()
@@ -146,6 +146,8 @@ class GatedCrossAttentionBlock(nn.Module):
         x: torch.FloatTensor,
         media: torch.FloatStorage,
         media_mask: torch.LongTensor | torch.BoolTensor,
+        previous_kv: tuple = None,
+        output_kv: bool = False
     ):
         """
         Args:
@@ -153,9 +155,10 @@ class GatedCrossAttentionBlock(nn.Module):
             media (FloatTensor, optional): media features, e.g. encoded by perceiver resample (n_batch, n_latents, d_media).
             media_mask (LongTensor | BoolTensor, optional): mask for media features (n_batch, n_latents).
         """
-        x = self.attn(x, media, media_mask) * self.attn_gate.tanh() + x
-        x = self.ff(x) * self.ff_gate.tanh()  + x
-        return x
+        attn_out, kv = self.attn(x, media, media_mask, previous_kv=previous_kv, output_kv=output_kv)
+        x = x + self.attn_gate.tanh() * attn_out
+        x = x + self.ff_gate.tanh()* self.ff(x)
+        return x, kv
 
 
 class HijackedLMBlock(nn.Module):
@@ -208,16 +211,16 @@ class HijackedLMBlock(nn.Module):
         """
         This forward function mimics forward() of T5Block, so it has the same input and output.
         """
-        
+
         # pass through xattn
         hidden_states, kv = self.xattn_block(
-            y=hidden_states,
-            visual_features=self.media,
-            media_locations=self.media_mask,
+            x=hidden_states,
+            media=self.media,
+            media_mask=self.media_mask,
             previous_kv=self.xattn_layer_past,
             output_kv=use_cache
         )
         self.kv_output = kv
-        
+
         # pass through original LM layer
         return self.lm_block(hidden_states, use_cache=use_cache, **kwargs)
