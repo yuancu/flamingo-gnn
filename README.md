@@ -1,4 +1,4 @@
-# Flamingo for KG
+# Flamingo for Encoder-Decoder
 
 In the original flamingo paper, the image token intertwines with the text token. However, in our setting, the *media* is not in a certain location of the text, but used to condition the whole generation process instead.
 

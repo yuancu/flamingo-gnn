@@ -1,5 +1,5 @@
 """
-The flamingo is built from lucidrains's implementation.
+The flamingo is built from lucidrains and dhansmair's implementation.
 """
 import torch
 from einops import rearrange
@@ -46,26 +46,45 @@ class MaskedCrossAttention(nn.Module):
         self,
         x,
         media,          # media tensor, represents information from other modality, encoded by perceiver resample - (batch, latents, dim)
+        media_mask
     ):
+        """This has the same inputs as the GatedCrossAttentionBlock
+        Args:
+            x (FloatTensor):
+                language features (n_batch, n_token, d_token)
+            media (FloatTensor, optional):
+                hetero features   (n_batch, n_latents, d_media). Defaults to None.
+            media_mask (LongTensor | BoolTensor, optional):
+                mask for hetero features (n_batch, n_latents). Defaults to None.
+        Returns:
+            FloatTensor: Tensor (n_batch, n_token, d_token)
+        """
         h = self.heads
 
         x = self.norm(x)
 
+        # d_inner = d_head * n_head
+        # (batch, n_token, d_token) -> (batch, n_token, d_inner)
         q = self.to_q(x)
 
+        # (batch, n_latents, d_media) -> (batch, n_latents, d_inner) for k, v
         k, v = self.to_kv(media).chunk(2, dim = -1)
         q, k, v = rearrange_many((q, k, v), 'b n (h d) -> b h n d', h = h)
 
         q = q * self.scale
 
-        sim = einsum('... i d, ... j d -> ... i j', q, k)
+        sim = einsum('... i d, ... j d -> ... i j', q, k)  # (batch, n_token, n_latents)
 
+        if media_mask is not None:
+            sim = sim.masked_fill(~media_mask, float('-inf'))
+
+        # What is this for? For numerical stability?
         sim = sim - sim.amax(dim = -1, keepdim = True).detach()
         attn = sim.softmax(dim = -1)
 
-        out = einsum('... i j, ... j d -> ... i d', attn, v)
+        out = einsum('... i j, ... j d -> ... i d', attn, v)  # (batch, n_token, d_inner)
         out = rearrange(out, 'b h n d -> b n (h d)')
-        return self.to_out(out)
+        return self.to_out(out)  # (batch, n_token, d_token)
 
 
 class GatedCrossAttentionBlock(nn.Module):
