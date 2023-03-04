@@ -1,5 +1,6 @@
 """
 This is built on top of LMGNN and DRAGON model.
+This module patches GNN into the encoder of T5 model.
 """
 import copy
 import inspect
@@ -33,6 +34,7 @@ class DragonEncoderOutput(ModelOutput):
     pooled_language_representation: torch.FloatTensor = None
     pooled_gnn_representation: torch.FloatTensor = None
     link_losses: Union[List, tuple] = None
+    gnn_hidden_states: Optional[torch.FloatTensor] = None
 
 
 @dataclass
@@ -95,7 +97,7 @@ class T5DragonEncoder(nn.Module):
         assert pos_triples.size(1) == neg_nodes.size(0)
         return edge_index, edge_type, pos_triples, neg_nodes
 
-    def forward(self, input_ids, attention_mask, token_type_ids, output_mask, concept_ids,
+    def forward(self, input_ids, attention_mask, token_type_ids, output_mask, node_ids,
                 node_type_ids, node_scores, adj_lengths, special_nodes_mask, edge_index, edge_type,
                 pos_triples, neg_nodes, inputs_embeds=None, output_hidden_states=True, output_attentions=True,
                 cache_output=False, return_dict=True):
@@ -110,7 +112,7 @@ class T5DragonEncoder(nn.Module):
                 in finetuning, it is the unmasked input ids
             attentino_mask: attention mask for the backbone language model
             token_type_ids: segment ids
-            concept_ids: (batch_size, n_node) 
+            node_ids: (batch_size, n_node)
             node_type_ids: (batch_size, n_node)
             node_scores: [bs, n_node, 1]
             adj_lengths: means the "actual" number of nodes (excluding padding) (batch_size, )
@@ -126,17 +128,17 @@ class T5DragonEncoder(nn.Module):
         assert len(input_ids.shape) == 2, "lm_input_ids should be [batch_size, seq_len]"
 
         edge_index, edge_type, pos_triples, neg_nodes = self.batch_graph(edge_index, edge_type, pos_triples, neg_nodes,
-                                                                         concept_ids.size(1))
+                                                                         node_ids.size(1))
         device = node_type_ids.device
         adj     = (edge_index.to(device), edge_type.to(device))
         lp_data = (pos_triples.to(device), neg_nodes.to(device))
 
-        lm_outputs, pooled_represenation, link_losses= self.lmgnn(
+        lm_outputs, gnn_output, pooled_represenation, link_losses= self.lmgnn(
             input_ids=input_ids,
             attention_mask=attention_mask, # If we extend to more than mlm, this needs to match lm_input_ids
             token_type_ids=token_type_ids,
             output_mask=output_mask,
-            concept_ids=concept_ids,
+            node_ids=node_ids,
             node_type_ids=node_type_ids,
             node_scores=node_scores,
             adj_lengths=adj_lengths,
@@ -161,7 +163,8 @@ class T5DragonEncoder(nn.Module):
                                    attentions=attentions,
                                    pooled_language_representation=pooled_language_representation,
                                    pooled_gnn_representation=pooled_gnn_representation,
-                                   link_losses=link_losses,)
+                                   link_losses=link_losses,
+                                   gnn_hidden_states=gnn_output)
 
     def get_output_embeddings(self):
         return self.lmgnn.backbone.get_output_embeddings()
@@ -237,7 +240,7 @@ class T5GNN(nn.Module):
                 attention_mask,
                 token_type_ids,
                 output_mask,
-                concept_ids,
+                node_ids,
                 node_type_ids,
                 node_scores,
                 adj_lengths,
@@ -248,7 +251,7 @@ class T5GNN(nn.Module):
                 inputs_embeds=None):
         """
         input_ids: in the pretraining time, this is corrupted
-        concept_ids: (batch_size, n_node)
+        node_ids: (batch_size, n_node)
         adj_lengths: (batch_size,)
         node_type_ids: (batch_size, n_node)
             0 == question entity; 1 == answer choice entity; 2 == other node; 3 == context node
@@ -260,11 +263,11 @@ class T5GNN(nn.Module):
         logits: [bs]
         """
         # GNN inputs
-        concept_ids[concept_ids == 0] = self.cpnet_vocab_size + 2
+        node_ids[node_ids == 0] = self.cpnet_vocab_size + 2
         if self.k >= 0:
-            gnn_input = self.concept_emb(concept_ids - 1, emb_data).to(node_type_ids.device)
+            gnn_input = self.concept_emb(node_ids - 1, emb_data).to(node_type_ids.device)
         else:
-            gnn_input = torch.zeros((concept_ids.size(0), concept_ids.size(1), self.concept_dim)).float().to(node_type_ids.device)
+            gnn_input = torch.zeros((node_ids.size(0), node_ids.size(1), self.concept_dim)).float().to(node_type_ids.device)
         gnn_input[:, 0] = 0
         gnn_input = self.dropout_e(gnn_input) #(batch_size, n_node, dim_node)
 
@@ -342,7 +345,7 @@ class T5GNN(nn.Module):
         # yc: return lm_hidden_states and gnn_output if return_hidden_states is set
         # lm_hidden_states: [bs, seq_len, sent_dim], gnn_output:  [bs, n_node, dim_node]
         pooled_represenation = (sent_vecs, Z_vecs) # [bs, sent_dim], [bs, dim_node]
-        return lm_outputs, pooled_represenation, (link_loss, pos_link_loss, neg_link_loss)
+        return lm_outputs, gnn_output, pooled_represenation, (link_loss, pos_link_loss, neg_link_loss)
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path, *inputs, **kwargs):
