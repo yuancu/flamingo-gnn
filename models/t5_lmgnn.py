@@ -47,7 +47,7 @@ class T5DragonEncoder(nn.Module):
     def __init__(self, args=Namespace(), model_name="t5-base", k=5, n_ntype=4, n_etype=38, n_concept=799273, concept_dim=200,
                  concept_in_dim=1024, n_attention_head=2, fc_dim=200, n_fc_layer=0, p_emb=0.2, p_gnn=0.2, p_fc=0.2,
                  pretrained_concept_emb=None, freeze_ent_emb=True, init_range=0.02, ie_dim=200, info_exchange=True,
-                 ie_layer_num=1, sep_ie_layers=False, layer_id=-1, no_lm_head=False):
+                 ie_layer_num=1, sep_ie_layers=False, layer_id=-1):
         super().__init__()
         self.n_ntype = n_ntype
         self.n_etype = n_etype
@@ -180,7 +180,6 @@ class T5GNN(nn.Module):
                  sep_ie_layers, layer_id):
         '''
         k: the number of fusion layers
-        no_lm_head: if True, the LM head will not be added even when mlm_task is True
         '''
         super().__init__()
         self.args = args

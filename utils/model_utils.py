@@ -59,5 +59,5 @@ def construct_encoder(args, model_cls):
                 freeze_ent_emb=freeze_ent_emb, init_range=args.init_range,
                 ie_dim=args.ie_dim, info_exchange=args.info_exchange,
                 ie_layer_num=args.ie_layer_num, sep_ie_layers=args.sep_ie_layers,
-                layer_id=args.encoder_layer, no_lm_head=True)
+                layer_id=args.encoder_layer)
     return model
