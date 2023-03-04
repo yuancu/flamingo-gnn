@@ -1,0 +1,333 @@
+default: &default
+  model: &model-default
+    k: 5  # The number of Fusion layers
+    att_head_num: 2  # number of attention heads of the final graph nodes' pooling
+    gnn_dim: 100  # dimension of the GNN layers
+    fc_dim: 200  # number of FC hidden units (except for the MInt operators)
+    fc_layer_num: 0  # number of hidden layers of the final MLP'
+    freeze_ent_emb: True  # Whether to freeze the entity embedding layer.
+    ie_dim: 200  # number of the hidden units of the MInt operator.
+    residual_ie: 0  # Whether to use residual MInt.
+    info_exchange: True  # Whether we have the MInt operator in every Fusion layer or every other Fusion layer or not at all.
+    ie_layer_num: 1  # number of hidden layers in the MInt operator
+    sep_ie_layers: False  # Whether to share parameters across the MInt ops across differernt Fusion layers or not. Setting it to `False` means sharing.
+    random_ent_emb: False  # Whether to use randomly initialized learnable entity embeddings or not.
+    cxt_node_connects_all: False  # Whether to connect the interaction node to all the retrieved KG nodes or only the linked nodes.
+    no_node_score: True  # Don't use node score.
+    encoder: bert-large-uncased  # encoder type
+    encoder_load_path: None  # custom encoder to load
+    encoder_layer: -1  # encoder layer ID to use as features (used only by non-LSTM encoders)
+    encoder_lr: 1e-05  # learning rate
+  data: &data-default
+    kg: cpnet  # What KG to use.
+    max_num_relation: -1  # max number of KG relation types to keep.
+    kg_only_use_qa_nodes: False
+    train_adj: data/csqa/graph/train.graph.adj.pk  # The path to the retrieved KG subgraphs of the training set.
+    dev_adj: data/csqa/graph/dev.graph.adj.pk  # The path to the retrieved KG subgraphs of the dev set.
+    test_adj: data/csqa/graph/test.graph.adj.pk  # The path to the retrieved KG subgraphs of the test set.
+    max_node_num: 200  # Max number of nodes / the threshold used to prune nodes.
+    subsample: 1.0  # The ratio to subsample the training set.
+    n_train: -1  # Number of training examples to use. Setting it to -1 means using the `subsample` argument to determine the training set size instead; otherwise it will override the `subsample` argument.
+    ent_emb_paths: ['data/cpnet/tzw.ent.npy']  # sources for entity embeddings
+    kg_vocab_path: 'data/cpnet/concept.txt'  # kg vocab file
+    dataset: csqa  # dataset name
+    data_dir: data  # Path to the data directory
+    inhouse: True  # run in-house setting
+    inhouse_train_qids: data/csqa/inhouse_split_qids.txt  # qids of the in-house training set
+    train_statements: data/csqa/statement/train.statement.jsonl
+    dev_statements: data/csqa/statement/dev.statement.jsonl
+    test_statements: data/csqa/statement/test.statement.jsonl
+    max_seq_len: 128
+    num_dataloader_workers: 0
+  task: &task-default
+    end_task: 1.0  # Task weight for the end task (MCQA)
+    mlm_task: 0.0  # Task weight for the MLM task
+    link_task: 0.0  # Task weight for the LinkPred task
+    mlm_probability: 0.15
+    span_mask: False
+    link_drop_max_count: 100  # To specify #target positive triples for LinkPred
+    link_drop_probability: 0.2  # To specify #target positive triples for LinkPred
+    link_drop_probability_in_which_keep: 0.2  # Within target positive triples, how much to keep in the input graph?
+    link_negative_sample_size: 64
+    link_negative_adversarial_sampling: True
+    link_negative_adversarial_sampling_temperature: 1
+    link_regularizer_weight: 0.01
+    link_normalize_headtail: 0
+    link_proj_headtail: False
+    scaled_distmult: False
+    link_gamma: 12
+    link_decoder: TransE
+  optim: &optim-default
+    # Optimization
+    loss: cross_entropy  # model type
+    optim: radam  # learning rate scheduler
+    lr_schedule: fixed  # learning rate scheduler
+    batch_size: 256
+    warmup_steps: 150
+    max_grad_norm: 1.0  # max grad norm (0 to disable)
+    weight_decay: 0.01  # l2 weight decay strength
+    n_epochs: 100  # total number of training epochs to perform.
+    max_epochs_before_stop: 10  # stop training if dev does not increase for N epochs
+    decoder_lr: 0.001  # Learning rate of parameters not in LM
+    mini_batch_size: 1
+    eval_batch_size: 64
+    unfreeze_epoch: 4  # Number of the first few epochs in which LM’s parameters are kept frozen.
+    refreeze_epoch: 10000
+    init_range: 0.02  # stddev when initializing with normal distribution
+    fp16: False  # use fp16 training. this requires torch>=1.6.0
+    upcast: False  # Upcast attention computation during fp16 training
+    redef_epoch_steps: -1
+    # Regularization:
+    dropouti: 0.2  # dropout for embedding layer
+    dropoutg: 0.2  # dropout for GNN layers
+    dropoutf: 0.2  # dropout for fully-connected layers
+    different_lr: True
+  misc: &misc-default
+    mode: train  # run training or evaluation
+    use_codalab: 0  # using codalab or not
+    save_dir: ./saved_models/  # model output directory
+    save_model: 2  # 0: do not save model checkpoints. 1: save if best dev. 2: save always
+    load_model_path: None  # The model checkpoint to load in the evaluation mode.
+    run_name: test  # The name of this experiment run.
+    resume_checkpoint: None  # The checkpoint to resume training from.
+    use_wandb: False  # Whether to use wandb or not.
+    resume_id: None  # The wandb run id to resume if `resume_checkpoint` is not None or 'None'.
+    load_graph_cache: True
+    dump_graph_cache: True
+    local_rank: -1  # For distributed training: local_rank
+    world_size: 1  # For distributed training: world_size
+    data_loader_one_process_at_a_time: False
+    log_interval: 10
+    cuda: True  # use GPU
+    seed: 0  # random seed
+    debug: False  # run in debug mode
+
+pretrain_wq: &pretrain-wq
+  <<: *default
+  data: &pretrain-wq-data
+    <<: *data-default
+    data_dir: data
+    dataset: web_question
+    kg: wikidata5m
+    kg_only_use_qa_nodes: False
+    kg_vocab_path: data/wikidata5m/graphvite-transe-wikidata5m.pkl
+    ent_emb_paths: 'data/wikidata5m/entity_embeddings.npy'
+    train_statements: data/web_question_single/statement/train.statement.jsonl
+    train_adj: data/web_question_single/adj_data/train.adj_data.pkl
+    dev_statements: data/web_question_single/statement/dev.statement.jsonl
+    dev_adj: data/web_question_single/adj_data/dev.adj_data.pkl
+    test_statements: data/web_question_single/statement/dev.statement.jsonl
+    test_adj: data/web_question_single/adj_data/dev.adj_data.pkl
+    legacy_adj: True # if true, the adj is a monilithic file, else its the folder to adjs
+    num_relations: 828  # number of relations for wikidata5m
+  model: &pretrain-wq-model
+    <<: *model-default
+    encoder_name_or_path: roberta-large
+    freeze_ent_emb: True
+  optim:  &pretrain-wq-optim
+    <<: *optim-default
+    fp16: True
+    gpu:
+    dist_backend: nccl # gloo, nccl or mpi
+    batch_size: 64
+    unfreeze_epoch: 2
+    large_lr: 0.001
+    small_lr: 0.00001
+    lr_schedule: fixed
+  task:
+    <<: *task-default
+    end_task: 0
+    mlm_task: 1
+    link_task: 1
+  misc: &pretrain-wq-misc
+    <<: *misc-default
+    wandb_mode: offline # online, offline or disabled
+    wandb_project: DRAGON
+    world_size: 1
+    do_train: True
+    do_eval: False
+    load_model_path:
+    fast_dev_run: False
+    log_interval: 20
+    run_name:
+    save_model: 2  # always save
+    save_interval: 5
+  deprecated:
+    resume_id: None
+    debug: False
+    use_wandb: True
+    mini_batch_size:
+
+
+pretrain_wq_no_graph:
+  <<: *pretrain-wq
+  misc:
+    <<: *pretrain-wq-misc
+    no_graph: True
+  task:
+    <<: *task-default
+    end_task: 0
+    mlm_task: 1
+    link_task: 0
+
+finetune_wq: &finetune-wq
+  <<: *pretrain-wq
+  decode: &finetune-wq-decode
+    decoder_type: bart
+    retrieve_text: False
+  misc:
+    <<: *pretrain-wq-misc
+    load_model_path: saved_models/pretrain_wq/ckpt/ckpt-e99.pt
+    fast_dev_run: False
+    resume_ckpt:
+  optim:
+    <<: *pretrain-wq-optim
+    n_epochs: 40
+    batch_size: 64
+
+finetune_wq_context:
+  <<: *finetune-wq
+  decode:
+    <<: *finetune-wq-decode
+    retrieve_text: True
+
+finetune_wq_nograph:
+  <<: *finetune-wq
+  misc:
+    <<: *pretrain-wq-misc
+    load_model_path: saved_models/slurm_pretrain_no_graph/ckpt-e99.pt
+    no_graph: True
+
+
+finetune_wq_context:
+  <<: *finetune-wq
+  decode:
+    <<: *finetune-wq-decode
+    retrieve_text: True
+
+# TODO: Config the text data loader to load context or question conditionally
+pretrain_squad: &pretrain-squad
+  <<: *pretrain-wq
+  data: &pretrain-squad-data
+    <<: *pretrain-wq-data
+    dataset: squad2
+    kg_only_use_qa_nodes: False
+    train_statements: data/squad2/statement/pt.train.statement.jsonl
+    train_adj: data/squad2/adj_data/pt.noext_train
+    dev_statements: data/squad2/statement/pt.dev.statement.jsonl
+    dev_adj: data/squad2/adj_data/pt.noext_dev
+    test_statements: data/squad2/statement/pt.dev.statement.jsonl
+    test_adj: data/squad2/adj_data/pt.noext_dev
+    legacy_adj: False
+    mlm_on: context
+    num_dataloader_workers: 1
+    max_seq_len: 196
+  optim: &pretrain-squad-optim
+    <<: *pretrain-wq-optim
+    different_lr: False
+    large_lr: 0.0001
+    small_lr: 0.00005
+    lr_schedule: warmup_linear
+    batch_size: 32
+    unfreeze_epoch: 0
+  misc: &pretrain-squad-misc
+    <<: *pretrain-wq-misc
+    wandb_mode: offline # online, offline or disabled
+    world_size: 1
+    do_train: True
+    do_eval: False
+    load_model_path:
+    fast_dev_run: False
+    log_interval: 20
+    run_name:
+  model:
+    <<: *pretrain-wq-model
+    encoder_name_or_path: t5-base
+
+pretrain_squad_sanity:
+  <<: *pretrain-squad
+  data:
+    <<: *pretrain-squad-data
+    train_statements: data/squad2/statement/sanity.train.statement.jsonl
+    train_adj: data/squad2/adj_data/sanity_train
+    dev_statements: data/squad2/statement/sanity.dev.statement.jsonl
+    dev_adj: data/squad2/adj_data/sanity_dev
+    test_statements: data/squad2/statement/sanity.dev.statement.jsonl
+    test_adj: data/squad2/adj_data/sanity_dev
+    num_dataloader_workers: 0
+    max_seq_len: 192
+  misc:
+    <<: *pretrain-squad-misc
+    log_interval: 4
+  optim:
+    <<: *pretrain-squad-optim
+    different_lr: True
+    large_lr: 0.0001
+    small_lr: 0.00005
+    lr_schedule: warmup_linear
+    batch_size: 4
+    unfreeze_epoch: 0
+
+pretrain_squad_no_graph: &pretrain-squad-no-graph
+  <<: *pretrain-squad
+  misc: &pretrain-squad-no-graph-misc
+    <<: *pretrain-squad-misc
+    no_graph: True
+    fast_dev_run: False
+  optim:
+    <<: *pretrain-squad-optim
+    batch_size: 32
+  task:
+    <<: *task-default
+    end_task: 0
+    mlm_task: 1
+    link_task: 0
+
+finetune_squad: &finetune-squad
+  <<: *pretrain-squad
+  data: &finetune-squad-data
+    <<: *pretrain-squad-data
+    max_seq_len: 64
+  decode: &finetune-squad-decode
+    # decoder_type: t5
+    retrieve_text: False
+  optim: &finetune-squad-optim
+    <<: *pretrain-squad-optim
+    n_epochs: 60
+    batch_size: 128
+  misc:
+    <<: *pretrain-squad-misc
+    load_model_path:
+    fast_dev_run: False
+    resume_ckpt:
+    no_graph: False
+    wandb_mode: online
+
+finetune_squad_no_graph:
+  <<: *pretrain-squad-no-graph
+  data:
+    <<: *pretrain-squad-data
+    max_seq_len: 64
+  decode:
+    retrieve_text: False
+  optim:
+    <<: *pretrain-squad-optim
+    batch_size: 128
+    n_epochs: 60
+  misc:
+    <<: *pretrain-squad-no-graph-misc
+    no_graph: True
+    fast_dev_run: False
+
+finetune_squad_retrieval:
+  <<: *finetune-squad
+  decode:
+    <<: *finetune-squad-decode
+    retrieve_text: True
+  data:
+    <<: *finetune-squad-data
+    max_seq_len: 196
+  optim:
+    <<: *finetune-squad-optim
+    n_epochs: 30
+    batch_size: 48
