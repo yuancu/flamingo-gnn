@@ -5,12 +5,12 @@ import pickle
 import random
 from abc import ABC, abstractmethod
 from collections import namedtuple
-from functools import lru_cache
+from functools import lru_cache, partial
 from typing import List
 
 import numpy as np
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 from transformers import (AutoTokenizer, BertTokenizer, BertTokenizerFast,
                           RobertaTokenizer, RobertaTokenizerFast, T5Tokenizer,
@@ -904,3 +904,41 @@ def dragond_encdec_collate_fn(examples, tokenizer,dummy_graph=False):
     return input_ids, attention_mask, token_type_ids, special_token_mask, decoder_labels, \
         concept_ids, node_type_ids, node_scores, adj_lengths, special_nodes_mask, \
         edge_index, edge_type, pos_triples, neg_nodes
+
+
+def load_data(args, dataset_cls, collate_fn, corrupt=True, num_workers=1, dummy_graph=False,
+              dataset_kwargs={}):
+    """Construct the dataset and return dataloaders
+
+    Args:
+        dataset_cls (class): DragonDataset or DragonEncDecDataset
+        collate_fn (callable): dragond_collate_fn, dragond_adapt2enc_collate_fn or dragond_encdec_collate_fn
+        corrupt (bool): whether to corrupt the graph and text
+        num_workers (int): number of workers for dataloader
+    Returns:
+        train_dataloader, dev_dataloader, test_dataloader
+    """
+    if dataset_cls == DragonDataset and corrupt is False:
+        logging.warning('Dataset(DragonDataset) is for pretrain, but corrupt is set to False.')
+    if dataset_cls == DragonEncDecDataset and not collate_fn in [dragond_encdec_collate_fn]:
+        raise ValueError('Dataset(DragonEncDecDataset) and collate_fn(dragond_encdec_collate_fn) should be used together.')
+    if dummy_graph:
+        collate_fn = partial(collate_fn, dummy_graph=True)
+    num_relations = args.num_relations
+    model_name = args.encoder_name_or_path
+    max_seq_length = args.max_seq_len
+    train_dataset = dataset_cls(statement_path=args.train_statements, adj_path=args.train_adj, legacy_adj=args.legacy_adj,
+                                num_relations=num_relations, corrupt_graph=corrupt, corrupt_text=corrupt, model_name=model_name,
+                                max_seq_length=max_seq_length, **dataset_kwargs)
+    dev_dataset = dataset_cls(statement_path=args.dev_statements, adj_path=args.dev_adj, legacy_adj=args.legacy_adj,
+                              num_relations=num_relations, corrupt_graph=corrupt, corrupt_text=corrupt, model_name=model_name,
+                              max_seq_length=max_seq_length, **dataset_kwargs)
+    test_dataset = dataset_cls(statement_path=args.test_statements, adj_path=args.test_adj, legacy_adj=args.legacy_adj,
+                               num_relations=num_relations, corrupt_graph=corrupt, corrupt_text=corrupt, model_name=model_name,
+                               max_seq_length=max_seq_length, **dataset_kwargs)
+    # set tokenizer
+    collate_fn = partial(collate_fn, tokenizer=train_dataset.tokenizer)
+    train_dataloader = DataLoader(train_dataset, collate_fn=collate_fn, batch_size=args.batch_size,num_workers=num_workers)
+    dev_dataloader = DataLoader(dev_dataset, collate_fn=collate_fn, batch_size=args.eval_batch_size, num_workers=num_workers)
+    test_dataloader = DataLoader(test_dataset, collate_fn=collate_fn, batch_size=args.eval_batch_size, num_workers=num_workers)
+    return train_dataloader, dev_dataloader, test_dataloader
