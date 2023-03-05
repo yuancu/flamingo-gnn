@@ -99,9 +99,11 @@ class MaskedCrossAttention(nn.Module):
             q = rearrange(q, 'b n (h d) -> b h n d', h=h)
 
         # compute the attention scores from the queries and keys
-        sim = einsum('... i d, ... j d -> ... i j', q, k)  # (batch, n_token, n_latents)
+        sim = einsum('... i d, ... j d -> ... i j', q, k)  # (batch, n_heads, n_token, n_latents)
 
         if media_mask is not None:
+            # broadcast the mask in the head and token dimension
+            media_mask = rearrange(media_mask, 'b n -> b 1 1 n')
             sim = sim.masked_fill(media_mask.logical_not(), float('-inf'))
 
         # What is this for? For numerical stability?
