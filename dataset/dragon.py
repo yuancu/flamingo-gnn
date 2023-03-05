@@ -24,13 +24,19 @@ InputFeatures = namedtuple('InputFeatures', 'example_id choices_features label')
 
 
 class DragonDataset(Dataset):
+    """This dataset additionally outputs decoder inputs on top of DragonDataset with 
+    dragond_enc_collate_fn's output. It removes the annoying choices dimension. Besides,
+    it doesn't corrupt the graph and the text for the link prediction task and masked
+    language modeling task.
+    """
     def __init__(self, statement_path, num_relations, adj_path, legacy_adj,
-                 max_seq_length=256, model_name='t5', max_node_num=200,
-                 cxt_node_connects_all=False, kg_only_use_qa_nodes=False,
+                 max_seq_length=256, model_name='roberta', max_node_num=200,
+                 cxt_node_connects_all=False,kg_only_use_qa_nodes=False,
                  num_choices=1, link_drop_max_count=100, link_drop_probability=0.2,
                  link_drop_probability_in_which_keep=0.2, link_negative_sample_size=64,
                  corrupt_graph=False, corrupt_text=False, span_mask=False,
-                 mlm_probability=0.15, truncation_side='left', encoder_input='question'):
+                 mlm_probability=0.15, truncation_side='left', encoder_input='question',
+                 decoder_label='answer'):
         """
         Args:
         adj_path: the path to a monilithic adj pickle (legacy) or path to a folder containing adj pickle files
@@ -38,14 +44,19 @@ class DragonDataset(Dataset):
         max_num_relation: the maximum number of kg relations to keep. (deprecated)
         encoder_input: the input to the encoder. Can be 'question', 'context', or 'contextualized_question'
         """
-        # assert is file is legacy_mode; else assert it is a folder
+        # Valid pairs
+        # - Pretraining: encoder_input = 'context', decoder_label = 'context_label' | 'context'
+        # - Finetuning: encoder_input = 'question' | 'retrieval_augmented_question', decoder_label = 'answer'
+                # assert is file is legacy_mode; else assert it is a folder
+        assert encoder_input in ['question', 'context', 'retrieval_augmented_question']
+        assert decoder_label  in ['answer', 'context_label', 'context']
+        if decoder_label == 'context_label':
+            assert corrupt_text, "corrupt_text must be True for MLM tasks (when decoder_label='context_label')"
         if legacy_adj:
             assert os.path.isfile(adj_path), "adj_path should be a file in legacy mode"
         else:
             assert os.path.isdir(adj_path), "adj_path should be a folder in non-legacy mode"
 
-        # if not corrupt_graph:
-        #     logging.warning("corrupt_graph is set to False, it should be True in the pretrain task")
         super(Dataset).__init__()
         # For text data
         self.max_seq_length = max_seq_length
@@ -55,6 +66,7 @@ class DragonDataset(Dataset):
             self.tokenizer.sep_token = '<extra_id_1>'
             self.tokenizer.cls_token = '<extra_id_2>'
             self.tokenizer.mask_token = '<extra_id_3>'
+        # Read statements
         self.examples = self.read_examples(statement_path)
         if len(self.examples) == 0:
             raise ValueError("No examples found in the dataset")
@@ -87,332 +99,106 @@ class DragonDataset(Dataset):
         self.link_negative_sample_size = link_negative_sample_size
         self.corrupt_graph = corrupt_graph
 
+        if corrupt_graph and (encoder_input == 'question' or encoder_input == 'retrieval_augmented_question'):
+            logging.warning("corrupt_graph shouldn't be set for downstream tasks. Setting it to False.")
+            self.corrupt_graph = False
+        self.decoder_label = decoder_label
+        if encoder_input == 'retrieval_augmented_question':
+            self.retriever = Retriever()
+
     def __len__(self):
         return len(self.examples)
 
-    def __getitem__(self, idx):
-        # 1. Load text data
-        # self.train_qids, self.train_labels, self.train_encoder_data, train_nodes_by_sents_list
-        example = self.examples[idx]
-        example_id, label, data_tensor, nodes_by_sents = self.postprocess_text(example, self.encoder_input)
-        input_ids, input_mask, segment_ids, output_mask = data_tensor
-        if self.corrupt_text:
-            lm_inputs, lm_labels = self.mlm_corrput_text(data_tensor)
-        else:
-            lm_inputs = input_ids #non-modified input
-            lm_labels = input_ids
-        
-        # 2. Load graph data (adapted from load_sparse_adj_data_with_contextnode in utils/data_utils.py L653)
-        if self.legacy_adj:
-            graph = self.load_graph_legacy(idx)
-        else:
-            graph = self.load_graph(example_id)
-        *decoder_data, adj_data = self.preprocess_graph(graph)
-        node_ids, node_type_ids, node_scores, adj_length, special_nodes_mask = decoder_data
-        edge_index, edge_type = adj_data
-
-        input_edge_index, input_edge_type, pos_triples, neg_nodes = self.postprocess_graph(edge_index, edge_type, node_type_ids)
-
-        return example.example_id, label, lm_inputs, lm_labels, input_ids, input_mask, segment_ids,\
-            output_mask, node_ids, node_type_ids, node_scores, adj_length, special_nodes_mask,\
-            input_edge_index, input_edge_type, pos_triples, neg_nodes
-
-    def read_examples(self, input_file):
-        """
-        Retruns:
-            example_id (str): id
-            contexts (str): context if exists, otherwise ""
-            question (str): question
-            endings (str): answer
-            label (int): label, -100 in our case
-        """
-        with open(input_file, "r", encoding="utf-8") as f:
-            examples = []
-            for line in tqdm(f.readlines()):
-                json_dic = json.loads(line)
-                label = ord(json_dic["answerKey"]) - ord("A") if 'answerKey' in json_dic else -100
-                question = json_dic["question"]["stem"]
-                choices = json_dic["question"]["choices"]
-                assert len(choices) > 0
-                answer = choices[label]["text"] if label != -100 else choices[0]["text"]
-                if "context" in json_dic:
-                    context = json_dic["context"]
-                else:
-                    context = ""
-                assert isinstance(context, str), "Currently only support string context"
-                examples.append(
-                    InputExample(
-                        example_id=json_dic["id"],
-                        contexts=context,
-                        question=question,
-                        endings=answer,
-                        label=label
-                    ))
-        return examples
-
-    def preprocess_text(self, example):
-        """Adapted from read_examples in utils/data_utils.py L1033"""
-        label = ord(example["answerKey"]) - ord("A") if 'answerKey' in example else -100
-        contexts = example["question"]["stem"]
-        if "para" in example:
-            contexts = example["para"] + " " + contexts
-        if "fact1" in example:
-            contexts = example["fact1"] + " " + contexts
-        input_example = InputExample(
-                example_id=example["id"],
-                contexts=[contexts] * len(example["question"]["choices"]) if len(example["question"]["choices"]) > 1 else [contexts],
-                question="",
-                endings=[ending["text"] for ending in example["question"]["choices"]],
-                label=label
-            )
-        return input_example
-
-    def postprocess_text(self, example, encoder_input='question'):
+    def postprocess_text(self, example):
         """Adapted from load_input_tensors in utils/data_utils.py L584
         Args:
             example: an InputExample object
         Returns:
             example_id (str): the id of the example
-            label (tensor[1,]): the index of the correct answer
             data_tensor (tensor [n_choice, max_seq_len] each): a tuple of input_ids, input_mask, segment_ids, output_mask.
             nodes_by_sents (list: empty): a list of nodes in the context
         """
         # There is no choice in out current setting, this is purely for compatibility with the original code
-        assert encoder_input in ['question', 'context', 'retrieval_augmented_question']
-        choices_features = []
+
         context = example.contexts
-        answer = example.endings
+        assert isinstance(context, str), "Currently contexts must be a string"
         question = example.question
-        assert isinstance(context, str), "Currently only support string context"
-        assert isinstance(answer, str), "Currently only support string answer"
-        if encoder_input == 'question':
-            encoder_input = self.tokenizer(question, truncation=True, max_length=self.max_seq_length, return_token_type_ids=True, return_special_tokens_mask=True)
-        elif encoder_input == 'context':
-            assert context != "", "Context is empty"
-            encoder_input = self.tokenizer(context, truncation=True, max_length=self.max_seq_length, return_token_type_ids=True, return_special_tokens_mask=True)
-        else: # encoded_input == 'contextualized_question'
-            encoder_input = self.tokenizer(context + " " + question, truncation=True, max_length=self.max_seq_length, return_token_type_ids=True, return_special_tokens_mask=True)
-
-        input_ids = encoder_input["input_ids"]
-        output_mask = encoder_input["special_tokens_mask"]
-        input_mask = encoder_input["attention_mask"]
-        segment_ids = encoder_input["token_type_ids"]
-
-        # Due to legacy reasons, we make the single choice as a list of one choice
-        choices_features.append((input_ids, input_mask, segment_ids, output_mask))
-
-        label = self.label_map.get(example.label, -100)
-        feature = InputFeatures(example_id=example.example_id, choices_features=choices_features, label=label)
-        # convert_features_to_tensors
-        input_ids = torch.tensor([f['input_ids'] for f in feature.choices_features], dtype=torch.long)
-        input_mask = torch.tensor([f['input_mask'] for f in feature.choices_features], dtype=torch.long)
-        segment_ids = torch.tensor([f['segment_ids'] for f in feature.choices_features], dtype=torch.long)
-        output_mask = torch.tensor([f['output_mask'] for f in feature.choices_features], dtype=torch.long)
-        label = torch.tensor(feature.label, dtype=torch.long)
-        data_tensor = (input_ids, input_mask, segment_ids, output_mask)
-        nodes_by_sents = []
-        return example.example_id, label, data_tensor, nodes_by_sents
-
-    def mlm_corrput_text(self, lm_tensors):
-        """Adapted from process_lm_data in utils/data_utils.py L124
+        answer = example.endings
+        # Here we separately encode the question and answer
+        # Warning: we assume the encoder and the decoder share the same tokenizer
+        # but this is not necessarily true!
+        # Padding is removed here, it's done in collate function
+        if self.encoder_input == 'context':
+            encoder_input = context
+        elif self.encoder_input == 'question':
+            encoder_input = question
+        else: # self.encoder_input == 'retrieval_augmented_question':
+            # raise NotImplementedError(f"Encoder input {self.encoder_input} is not implemented")
+            # TODO: integrate retrieval
+            retrieved_doc = self.retriever(question)
+            encoder_input = question + self.tokenizer.sep_token + retrieved_doc
+        encoder_inputs = self.tokenizer(encoder_input, truncation=True,
+                                        max_length=self.max_seq_length,
+                                        return_token_type_ids=True,
+                                        return_special_tokens_mask=True,
+                                        return_tensors='pt')
+        # decoder label:
+        # - context or context_label are for pretraining, where context returns original text, context_label returns
+        #   mlm labels of the context
+        # - answer is for downstream tasks
+        if self.corrupt_text:
+            encoder_input_tensors = (encoder_inputs['input_ids'], encoder_inputs['attention_mask'],
+                                     encoder_inputs['token_type_ids'], encoder_inputs['special_tokens_mask'])
+            mlm_inputs, mlm_labels = self.mlm_corrput_text(encoder_input_tensors)
+            # TODO: attention_mask etc. of the encoder inputs should also be replaced
+            encoder_inputs['input_ids'] = mlm_inputs
         
-        Args:
-            lm_tensors: a tuple of input_ids, input_mask, segment_ids, output_mask. Each is of shape [n_choice, max_seq_len]
-        """
-        input_ids, special_tokens_mask = lm_tensors[0], lm_tensors[3]
-        assert input_ids.dim() == 2 and special_tokens_mask.dim() == 2
-        _nc, _seqlen = input_ids.size()
-
-        _inputs = input_ids.clone().view(-1, _seqlen) #remember to clone input_ids
-        _mask_labels = []
-        for ex in _inputs:
-            if self.span_mask:
-                _mask_label = self._span_mask(self.tokenizer.convert_ids_to_tokens(ex))
-            else:
-                _mask_label = self._word_mask(self.tokenizer.convert_ids_to_tokens(ex))
-            _mask_labels.append(_mask_label)
-        _mask_labels = torch.tensor(_mask_labels, device=_inputs.device)
-
-        batch_lm_inputs, batch_lm_labels = self.mask_tokens(inputs=_inputs, mask_labels=_mask_labels, special_tokens_mask=special_tokens_mask.view(-1, _seqlen))
-
-        batch_lm_inputs = batch_lm_inputs.view(_nc, _seqlen) #this is masked
-        batch_lm_labels = batch_lm_labels.view(_nc, _seqlen)
-        return batch_lm_inputs, batch_lm_labels
-
-    def _span_mask(self, input_tokens: List[str], max_predictions=512):
-        """Copid from _span_mask in utils/data_utils.py L251
-        Get 0/1 labels for masking tokens at word level
-        """
-        effective_num_toks = 0
-        cand_indexes = []
-        if isinstance(self.tokenizer, (BertTokenizer, BertTokenizerFast)):
-            after_special_tok = False
-            for (i, token) in enumerate(input_tokens):
-                if token in ["[CLS]", "[SEP]", "[PAD]"]:
-                    after_special_tok = True
-                    continue
-                if len(cand_indexes) >= 1 and (not after_special_tok) and token.startswith("##"):
-                    cand_indexes[-1].append(i)
-                else:
-                    cand_indexes.append([i])
-                after_special_tok = False
-                effective_num_toks += 1
-        elif isinstance(self.tokenizer, (RobertaTokenizer, RobertaTokenizerFast)):
-            after_special_tok = False
-            for (i, token) in enumerate(input_tokens):
-                if token in ["<s>",  "</s>", "<pad>"]:
-                    after_special_tok = True
-                    continue
-                if len(cand_indexes) >= 1 and (not after_special_tok) and (not token.startswith("Ġ")):
-                    cand_indexes[-1].append(i)
-                else:
-                    cand_indexes.append([i])
-                after_special_tok = False
-                effective_num_toks += 1
+        if self.decoder_label == 'context_label':
+            decoder_labels = mlm_labels
         else:
-            raise NotImplementedError
-        cand_indexes_args = list(range(len(cand_indexes)))
-
-        random.shuffle(cand_indexes_args)
-        num_to_predict = min(max_predictions, max(1, int(round(effective_num_toks * self.mlm_probability))))
-        masked_lms = []
-        covered_indexes = set()
-        for wid in cand_indexes_args:
-            if len(masked_lms) >= num_to_predict:
-                break
-            span_len = np.random.choice(self.span_lens, p=self.span_len_dist)
-            # If adding a whole-word mask would exceed the maximum number of
-            # predictions, then just skip this candidate.
-            # if len(masked_lms) + span_len > num_to_predict:
-            #     continue
-            index_set = []
-            is_any_index_covered = False
-            for _wid in range(wid, len(cand_indexes)): #iterate over word
-                if len(index_set) + len(cand_indexes[_wid]) > span_len:
-                    break
-                for _index in cand_indexes[_wid]: #iterate over subword
-                    if _index in covered_indexes:
-                        is_any_index_covered = True
-                        break
-                    index_set.append(_index)
-                if is_any_index_covered:
-                    break
-            if is_any_index_covered:
-                continue
-            for _index in index_set:
-                covered_indexes.add(_index)
-                masked_lms.append(_index)
-
-        assert len(covered_indexes) == len(masked_lms)
-        mask_labels = [1 if i in covered_indexes else 0 for i in range(len(input_tokens))]
-        return mask_labels
-
-    def _word_mask(self, input_tokens: List[str], max_predictions=512):
-        """Copid from _word_mask in utils/data_utils.py L192
-        Get 0/1 labels for masking tokens at word level
-        """
-        effective_num_toks = 0
-        cand_indexes = []
-        after_special_tok = False
-        for (i, token) in enumerate(input_tokens):
-            if token in [self.tokenizer.cls_token, self.tokenizer.sep_token, self.tokenizer.pad_token]:
-                after_special_tok = True
-                continue
-            if isinstance(self.tokenizer, (BertTokenizer, BertTokenizerFast)):
-                # In Bert tokenizer, the following subword tokens of a word starts with "##"
-                if len(cand_indexes) >= 1 and (not after_special_tok) and token.startswith("##"):
-                    cand_indexes[-1].append(i)
-                else:
-                    cand_indexes.append([i])
-            elif isinstance(self.tokenizer, (RobertaTokenizer, RobertaTokenizerFast)):
-                # In Roberta tokenizer, the first subword token of a word starts with "Ġ"
-                if len(cand_indexes) >= 1 and (not after_special_tok) and (not token.startswith("Ġ")):
-                    cand_indexes[-1].append(i)
-                else:
-                    cand_indexes.append([i])
-            elif isinstance(self.tokenizer, (T5Tokenizer, T5TokenizerFast)):
-                # In T5 tokenizer, the first subword token of a word starts with "▁"
-                if len(cand_indexes) >= 1 and (not after_special_tok) and not token.startswith("▁"):
-                    cand_indexes[-1].append(i)
-                else:
-                    cand_indexes.append([i])
+            if self.decoder_label == 'context':
+                decoder_input = context
+            elif self.decoder_label == 'answer':
+                decoder_input = answer
             else:
-                raise NotImplementedError()
-            after_special_tok = False
-            effective_num_toks += 1
-        random.shuffle(cand_indexes)
-        num_to_predict = min(max_predictions, max(1, int(round(effective_num_toks * self.mlm_probability))))
-        masked_lms = []
-        covered_indexes = set()
-        for index_set in cand_indexes:
-            if len(masked_lms) >= num_to_predict:
-                break
-            # If adding a whole-word mask would exceed the maximum number of
-            # predictions, then just skip this candidate.
-            if len(masked_lms) + len(index_set) > num_to_predict:
-                continue
-            is_any_index_covered = False
-            for index in index_set:
-                if index in covered_indexes:
-                    is_any_index_covered = True
-                    break
-            if is_any_index_covered:
-                continue
-            for index in index_set:
-                covered_indexes.add(index)
-                masked_lms.append(index)
+                raise NotImplementedError(f"decoder_input {self.decoder_input} is not implemented")
+            decoder_inputs = self.tokenizer(decoder_input, truncation=True,
+                                            max_length=self.max_seq_length,
+                                            return_tensors='pt')
+            decoder_labels = decoder_inputs['input_ids']
+        return encoder_inputs, decoder_labels
 
-        assert len(covered_indexes) == len(masked_lms)
-        mask_labels = [1 if i in covered_indexes else 0 for i in range(len(input_tokens))]
-        return mask_labels
+    def __getitem__(self, idx):
+        # 1. Load text data
+        # self.train_qids, self.train_labels, self.train_encoder_data, train_nodes_by_sents_list
+        example = self.examples[idx]
+        # MLM is also done in postprocess_text
+        encoder_inputs, decoder_labels = self.postprocess_text(example)
+        input_ids, attention_mask, token_type_ids, special_tokens_mask = encoder_inputs["input_ids"], encoder_inputs["attention_mask"], \
+            encoder_inputs["token_type_ids"], encoder_inputs["special_tokens_mask"]
 
-    def mask_tokens(self, inputs, mask_labels, special_tokens_mask=None):
-        """Copied from mask_tokens in utils/data_utils.py L149
-        Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
-        
-        Returns:
-            masked_inputs: torch.Tensor of shape (batch_size, seq_len)
-            labels: torch.Tensor of shape (batch_size, seq_len). It is initialized as orginal inputs,
-                and then the masked input tokens are replaced by -100.
-        """
-        assert inputs.size() == mask_labels.size()
+        # 2. Load graph data, post processing is done in the _load_graph_from_index function
+        node_ids, node_type_ids, node_scores, adj_length, special_nodes_mask,\
+            input_edge_index, input_edge_type, pos_triples, neg_nodes = self._load_graph_from_index(idx)
 
-        if self.tokenizer.mask_token is None:
-            raise ValueError(
-                "This tokenizer does not have a mask token which is necessary for masked language modeling. Remove the --mlm flag if you want to use this tokenizer."
-            )
-        labels = inputs.clone()
-        # We sample a few tokens in each sequence for masked-LM training (with probability args.mlm_probability defaults to 0.15 in Bert/RoBERTa)
+        return input_ids, attention_mask, token_type_ids, special_tokens_mask, decoder_labels,\
+            node_ids, node_type_ids, node_scores, adj_length, special_nodes_mask,\
+            input_edge_index, input_edge_type, pos_triples, neg_nodes
 
-        probability_matrix = mask_labels
-
-        if special_tokens_mask is None:
-            special_tokens_mask = [
-                self.tokenizer.get_special_tokens_mask(val, already_has_special_tokens=True) for val in labels.tolist()
-            ]
-            special_tokens_mask = torch.tensor(special_tokens_mask, dtype=torch.bool)
+    def _load_graph_from_index(self, idx):
+        """adapted from load_sparse_adj_data_with_contextnode in utils/data_utils.py L653"""
+        if self.legacy_adj:
+            graph = self.load_graph_legacy(idx)
         else:
-            special_tokens_mask = special_tokens_mask.bool()
+            example = self.examples[idx]
+            graph = self.load_graph(example.example_id)
+        *decoder_data, adj_data = self.preprocess_graph(graph)
+        node_ids, node_type_ids, node_scores, adj_length, special_nodes_mask = decoder_data
+        edge_index, edge_type = adj_data
 
-        probability_matrix.masked_fill_(special_tokens_mask, value=0.0)
-        # if self.tokenizer._pad_token is not None: #should be handled already
-        #     padding_mask = labels.eq(self.tokenizer.pad_token_id)
-        #     probability_matrix.masked_fill_(padding_mask, value=0.0)
-
-        masked_indices = probability_matrix.bool()
-        labels[~masked_indices] = -100  # We only compute loss on masked tokens
-
-        # 80% of the time, we replace masked input tokens with tokenizer.mask_token ([MASK])
-        indices_replaced = torch.bernoulli(torch.full(labels.shape, 0.8, device=labels.device)).bool() & masked_indices
-        inputs[indices_replaced] = self.tokenizer.convert_tokens_to_ids(self.tokenizer.mask_token)
-
-        # 10% of the time, we replace masked input tokens with random word
-        indices_random = torch.bernoulli(torch.full(labels.shape, 0.5, device=labels.device)).bool() & masked_indices & ~indices_replaced
-        random_words = torch.randint(len(self.tokenizer), labels.shape, dtype=torch.long, device=labels.device)
-        inputs[indices_random] = random_words[indices_random]
-
-        # The rest of the time (10% of the time) we keep the masked input tokens unchanged
-        return inputs, labels
+        input_edge_index, input_edge_type, pos_triples, neg_nodes = self.postprocess_graph(edge_index, edge_type, node_type_ids)
+        return node_ids, node_type_ids, node_scores, adj_length, special_nodes_mask,\
+            input_edge_index, input_edge_type, pos_triples, neg_nodes
 
     def load_graph(self, example_id):
         """
@@ -653,135 +439,244 @@ class DragonDataset(Dataset):
         neg_nodes = torch.randint(0, effective_num_nodes, (num_edges, num_corruption), device=device) #[n_triple, n_neg]
         return input_edge_index, input_edge_type, pos_triples, neg_nodes
 
-
-class DragonEncDecDataset(DragonDataset):
-    """This dataset additionally outputs decoder inputs on top of DragonDataset with 
-    dragond_enc_collate_fn's output. It removes the annoying choices dimension. Besides,
-    it doesn't corrupt the graph and the text for the link prediction task and masked
-    language modeling task.
-    """
-    def __init__(self, statement_path, num_relations, adj_path, legacy_adj,
-                 max_seq_length=256, model_name='roberta', max_node_num=200,
-                 cxt_node_connects_all=False,kg_only_use_qa_nodes=False,
-                 num_choices=1, link_drop_max_count=100, link_drop_probability=0.2,
-                 link_drop_probability_in_which_keep=0.2, link_negative_sample_size=64,
-                 corrupt_graph=False, corrupt_text=False, span_mask=False,
-                 mlm_probability=0.15, truncation_side='left', encoder_input='question',
-                 decoder_label='answer'):
-        assert encoder_input in ['question', 'context', 'retrieval_augmented_question']
-        assert decoder_label  in ['answer', 'context_label', 'context']
-        if decoder_label == 'context_label':
-            assert corrupt_text, "corrupt_text must be True for MLM tasks (when decoder_label='context_label')"
-        # Valid pairs
-        # - Pretraining: encoder_input = 'context', decoder_label = 'context_label' | 'context'
-        # - Finetuning: encoder_input = 'question' | 'retrieval_augmented_question', decoder_label = 'answer'
-        super().__init__(statement_path, num_relations, adj_path, legacy_adj,
-                       max_seq_length, model_name, max_node_num,
-                       cxt_node_connects_all, kg_only_use_qa_nodes,
-                       num_choices, link_drop_max_count, link_drop_probability,
-                       link_drop_probability_in_which_keep, link_negative_sample_size,
-                       corrupt_graph, corrupt_text, span_mask,
-                       mlm_probability, truncation_side, encoder_input)
-        if corrupt_graph and (encoder_input == 'question' or encoder_input == 'retrieval_augmented_question'):
-            logging.warning("corrupt_graph shouldn't be set for downstream tasks. Setting it to False.")
-            self.corrupt_graph = False
-        self.decoder_label = decoder_label
-        if encoder_input == 'retrieval_augmented_question':
-            self.retriever = Retriever()
-
-    def postprocess_text(self, example):
-        """Adapted from load_input_tensors in utils/data_utils.py L584
-        Args:
-            example: an InputExample object
-        Returns:
-            example_id (str): the id of the example
-            data_tensor (tensor [n_choice, max_seq_len] each): a tuple of input_ids, input_mask, segment_ids, output_mask.
-            nodes_by_sents (list: empty): a list of nodes in the context
+    def read_examples(self, input_file):
         """
-        # There is no choice in out current setting, this is purely for compatibility with the original code
+        Retruns:
+            example_id (str): id
+            contexts (str): context if exists, otherwise ""
+            question (str): question
+            endings (str): answer
+            label (int): label, -100 in our case
+        """
+        with open(input_file, "r", encoding="utf-8") as f:
+            examples = []
+            for line in tqdm(f.readlines()):
+                json_dic = json.loads(line)
+                label = ord(json_dic["answerKey"]) - ord("A") if 'answerKey' in json_dic else -100
+                question = json_dic["question"]["stem"]
+                choices = json_dic["question"]["choices"]
+                assert len(choices) > 0
+                answer = choices[label]["text"] if label != -100 else choices[0]["text"]
+                if "context" in json_dic:
+                    context = json_dic["context"]
+                else:
+                    context = ""
+                assert isinstance(context, str), "Currently only support string context"
+                examples.append(
+                    InputExample(
+                        example_id=json_dic["id"],
+                        contexts=context,
+                        question=question,
+                        endings=answer,
+                        label=label
+                    ))
+        return examples
 
-        context = example.contexts
-        assert isinstance(context, str), "Currently contexts must be a string"
-        question = example.question
-        answer = example.endings
-        # Here we separately encode the question and answer
-        # Warning: we assume the encoder and the decoder share the same tokenizer
-        # but this is not necessarily true!
-        # Padding is removed here, it's done in collate function
-        if self.encoder_input == 'context':
-            encoder_input = context
-        elif self.encoder_input == 'question':
-            encoder_input = question
-        else: # self.encoder_input == 'retrieval_augmented_question':
-            # raise NotImplementedError(f"Encoder input {self.encoder_input} is not implemented")
-            # TODO: integrate retrieval
-            retrieved_doc = self.retriever(question)
-            encoder_input = question + self.tokenizer.sep_token + retrieved_doc
-        encoder_inputs = self.tokenizer(encoder_input, truncation=True,
-                                        max_length=self.max_seq_length,
-                                        return_token_type_ids=True,
-                                        return_special_tokens_mask=True,
-                                        return_tensors='pt')
-        # decoder label:
-        # - context or context_label are for pretraining, where context returns original text, context_label returns
-        #   mlm labels of the context
-        # - answer is for downstream tasks
-        if self.corrupt_text:
-            encoder_input_tensors = (encoder_inputs['input_ids'], encoder_inputs['attention_mask'],
-                                     encoder_inputs['token_type_ids'], encoder_inputs['special_tokens_mask'])
-            mlm_inputs, mlm_labels = self.mlm_corrput_text(encoder_input_tensors)
-            # TODO: attention_mask etc. of the encoder inputs should also be replaced
-            encoder_inputs['input_ids'] = mlm_inputs
+    def mlm_corrput_text(self, lm_tensors):
+        """Adapted from process_lm_data in utils/data_utils.py L124
         
-        if self.decoder_label == 'context_label':
-            decoder_labels = mlm_labels
-        else:
-            if self.decoder_label == 'context':
-                decoder_input = context
-            elif self.decoder_label == 'answer':
-                decoder_input = answer
+        Args:
+            lm_tensors: a tuple of input_ids, input_mask, segment_ids, output_mask. Each is of shape [n_choice, max_seq_len]
+        """
+        input_ids, special_tokens_mask = lm_tensors[0], lm_tensors[3]
+        assert input_ids.dim() == 2 and special_tokens_mask.dim() == 2
+        _nc, _seqlen = input_ids.size()
+
+        _inputs = input_ids.clone().view(-1, _seqlen) #remember to clone input_ids
+        _mask_labels = []
+        for ex in _inputs:
+            if self.span_mask:
+                _mask_label = self._span_mask(self.tokenizer.convert_ids_to_tokens(ex))
             else:
-                raise NotImplementedError(f"decoder_input {self.decoder_input} is not implemented")
-            decoder_inputs = self.tokenizer(decoder_input, truncation=True,
-                                            max_length=self.max_seq_length,
-                                            return_tensors='pt')
-            decoder_labels = decoder_inputs['input_ids']
-        return encoder_inputs, decoder_labels
+                _mask_label = self._word_mask(self.tokenizer.convert_ids_to_tokens(ex))
+            _mask_labels.append(_mask_label)
+        _mask_labels = torch.tensor(_mask_labels, device=_inputs.device)
 
-    def __getitem__(self, idx):
-        # 1. Load text data
-        # self.train_qids, self.train_labels, self.train_encoder_data, train_nodes_by_sents_list
-        example = self.examples[idx]
-        # MLM is also done in postprocess_text
-        encoder_inputs, decoder_labels = self.postprocess_text(example)
-        input_ids, attention_mask, token_type_ids, special_tokens_mask = encoder_inputs["input_ids"], encoder_inputs["attention_mask"], \
-            encoder_inputs["token_type_ids"], encoder_inputs["special_tokens_mask"]
+        batch_lm_inputs, batch_lm_labels = self.mask_tokens(inputs=_inputs, mask_labels=_mask_labels, special_tokens_mask=special_tokens_mask.view(-1, _seqlen))
 
-        # 2. Load graph data, post processing is done in the _load_graph_from_index function
-        node_ids, node_type_ids, node_scores, adj_length, special_nodes_mask,\
-            input_edge_index, input_edge_type, pos_triples, neg_nodes = self._load_graph_from_index(idx)
+        batch_lm_inputs = batch_lm_inputs.view(_nc, _seqlen) #this is masked
+        batch_lm_labels = batch_lm_labels.view(_nc, _seqlen)
+        return batch_lm_inputs, batch_lm_labels
 
-        return input_ids, attention_mask, token_type_ids, special_tokens_mask, decoder_labels,\
-            node_ids, node_type_ids, node_scores, adj_length, special_nodes_mask,\
-            input_edge_index, input_edge_type, pos_triples, neg_nodes
-
-    def _load_graph_from_index(self, idx):
-        """adapted from load_sparse_adj_data_with_contextnode in utils/data_utils.py L653"""
-        if self.legacy_adj:
-            graph = self.load_graph_legacy(idx)
+    def _span_mask(self, input_tokens: List[str], max_predictions=512):
+        """Copid from _span_mask in utils/data_utils.py L251
+        Get 0/1 labels for masking tokens at word level
+        """
+        effective_num_toks = 0
+        cand_indexes = []
+        if isinstance(self.tokenizer, (BertTokenizer, BertTokenizerFast)):
+            after_special_tok = False
+            for (i, token) in enumerate(input_tokens):
+                if token in ["[CLS]", "[SEP]", "[PAD]"]:
+                    after_special_tok = True
+                    continue
+                if len(cand_indexes) >= 1 and (not after_special_tok) and token.startswith("##"):
+                    cand_indexes[-1].append(i)
+                else:
+                    cand_indexes.append([i])
+                after_special_tok = False
+                effective_num_toks += 1
+        elif isinstance(self.tokenizer, (RobertaTokenizer, RobertaTokenizerFast)):
+            after_special_tok = False
+            for (i, token) in enumerate(input_tokens):
+                if token in ["<s>",  "</s>", "<pad>"]:
+                    after_special_tok = True
+                    continue
+                if len(cand_indexes) >= 1 and (not after_special_tok) and (not token.startswith("Ġ")):
+                    cand_indexes[-1].append(i)
+                else:
+                    cand_indexes.append([i])
+                after_special_tok = False
+                effective_num_toks += 1
         else:
-            example = self.examples[idx]
-            graph = self.load_graph(example.example_id)
-        *decoder_data, adj_data = self.preprocess_graph(graph)
-        node_ids, node_type_ids, node_scores, adj_length, special_nodes_mask = decoder_data
-        edge_index, edge_type = adj_data
+            raise NotImplementedError
+        cand_indexes_args = list(range(len(cand_indexes)))
 
-        input_edge_index, input_edge_type, pos_triples, neg_nodes = self.postprocess_graph(edge_index, edge_type, node_type_ids)
-        return node_ids, node_type_ids, node_scores, adj_length, special_nodes_mask,\
-            input_edge_index, input_edge_type, pos_triples, neg_nodes
+        random.shuffle(cand_indexes_args)
+        num_to_predict = min(max_predictions, max(1, int(round(effective_num_toks * self.mlm_probability))))
+        masked_lms = []
+        covered_indexes = set()
+        for wid in cand_indexes_args:
+            if len(masked_lms) >= num_to_predict:
+                break
+            span_len = np.random.choice(self.span_lens, p=self.span_len_dist)
+            # If adding a whole-word mask would exceed the maximum number of
+            # predictions, then just skip this candidate.
+            # if len(masked_lms) + span_len > num_to_predict:
+            #     continue
+            index_set = []
+            is_any_index_covered = False
+            for _wid in range(wid, len(cand_indexes)): #iterate over word
+                if len(index_set) + len(cand_indexes[_wid]) > span_len:
+                    break
+                for _index in cand_indexes[_wid]: #iterate over subword
+                    if _index in covered_indexes:
+                        is_any_index_covered = True
+                        break
+                    index_set.append(_index)
+                if is_any_index_covered:
+                    break
+            if is_any_index_covered:
+                continue
+            for _index in index_set:
+                covered_indexes.add(_index)
+                masked_lms.append(_index)
 
+        assert len(covered_indexes) == len(masked_lms)
+        mask_labels = [1 if i in covered_indexes else 0 for i in range(len(input_tokens))]
+        return mask_labels
 
+    def _word_mask(self, input_tokens: List[str], max_predictions=512):
+        """Copid from _word_mask in utils/data_utils.py L192
+        Get 0/1 labels for masking tokens at word level
+        """
+        effective_num_toks = 0
+        cand_indexes = []
+        after_special_tok = False
+        for (i, token) in enumerate(input_tokens):
+            if token in [self.tokenizer.cls_token, self.tokenizer.sep_token, self.tokenizer.pad_token]:
+                after_special_tok = True
+                continue
+            if isinstance(self.tokenizer, (BertTokenizer, BertTokenizerFast)):
+                # In Bert tokenizer, the following subword tokens of a word starts with "##"
+                if len(cand_indexes) >= 1 and (not after_special_tok) and token.startswith("##"):
+                    cand_indexes[-1].append(i)
+                else:
+                    cand_indexes.append([i])
+            elif isinstance(self.tokenizer, (RobertaTokenizer, RobertaTokenizerFast)):
+                # In Roberta tokenizer, the first subword token of a word starts with "Ġ"
+                if len(cand_indexes) >= 1 and (not after_special_tok) and (not token.startswith("Ġ")):
+                    cand_indexes[-1].append(i)
+                else:
+                    cand_indexes.append([i])
+            elif isinstance(self.tokenizer, (T5Tokenizer, T5TokenizerFast)):
+                # In T5 tokenizer, the first subword token of a word starts with "▁"
+                if len(cand_indexes) >= 1 and (not after_special_tok) and not token.startswith("▁"):
+                    cand_indexes[-1].append(i)
+                else:
+                    cand_indexes.append([i])
+            else:
+                raise NotImplementedError()
+            after_special_tok = False
+            effective_num_toks += 1
+        random.shuffle(cand_indexes)
+        num_to_predict = min(max_predictions, max(1, int(round(effective_num_toks * self.mlm_probability))))
+        masked_lms = []
+        covered_indexes = set()
+        for index_set in cand_indexes:
+            if len(masked_lms) >= num_to_predict:
+                break
+            # If adding a whole-word mask would exceed the maximum number of
+            # predictions, then just skip this candidate.
+            if len(masked_lms) + len(index_set) > num_to_predict:
+                continue
+            is_any_index_covered = False
+            for index in index_set:
+                if index in covered_indexes:
+                    is_any_index_covered = True
+                    break
+            if is_any_index_covered:
+                continue
+            for index in index_set:
+                covered_indexes.add(index)
+                masked_lms.append(index)
+
+        assert len(covered_indexes) == len(masked_lms)
+        mask_labels = [1 if i in covered_indexes else 0 for i in range(len(input_tokens))]
+        return mask_labels
+
+    def mask_tokens(self, inputs, mask_labels, special_tokens_mask=None):
+        """Copied from mask_tokens in utils/data_utils.py L149
+        Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
+        
+        Returns:
+            masked_inputs: torch.Tensor of shape (batch_size, seq_len)
+            labels: torch.Tensor of shape (batch_size, seq_len). It is initialized as orginal inputs,
+                and then the masked input tokens are replaced by -100.
+        """
+        assert inputs.size() == mask_labels.size()
+
+        if self.tokenizer.mask_token is None:
+            raise ValueError(
+                "This tokenizer does not have a mask token which is necessary for masked language modeling. Remove the --mlm flag if you want to use this tokenizer."
+            )
+        labels = inputs.clone()
+        # We sample a few tokens in each sequence for masked-LM training (with probability args.mlm_probability defaults to 0.15 in Bert/RoBERTa)
+
+        probability_matrix = mask_labels
+
+        if special_tokens_mask is None:
+            special_tokens_mask = [
+                self.tokenizer.get_special_tokens_mask(val, already_has_special_tokens=True) for val in labels.tolist()
+            ]
+            special_tokens_mask = torch.tensor(special_tokens_mask, dtype=torch.bool)
+        else:
+            special_tokens_mask = special_tokens_mask.bool()
+
+        probability_matrix.masked_fill_(special_tokens_mask, value=0.0)
+        # if self.tokenizer._pad_token is not None: #should be handled already
+        #     padding_mask = labels.eq(self.tokenizer.pad_token_id)
+        #     probability_matrix.masked_fill_(padding_mask, value=0.0)
+
+        masked_indices = probability_matrix.bool()
+        labels[~masked_indices] = -100  # We only compute loss on masked tokens
+
+        # 80% of the time, we replace masked input tokens with tokenizer.mask_token ([MASK])
+        indices_replaced = torch.bernoulli(torch.full(labels.shape, 0.8, device=labels.device)).bool() & masked_indices
+        inputs[indices_replaced] = self.tokenizer.convert_tokens_to_ids(self.tokenizer.mask_token)
+
+        # 10% of the time, we replace masked input tokens with random word
+        indices_random = torch.bernoulli(torch.full(labels.shape, 0.5, device=labels.device)).bool() & masked_indices & ~indices_replaced
+        random_words = torch.randint(len(self.tokenizer), labels.shape, dtype=torch.long, device=labels.device)
+        inputs[indices_random] = random_words[indices_random]
+
+        # The rest of the time (10% of the time) we keep the masked input tokens unchanged
+        return inputs, labels
+
+    
 class Retriever(ABC):
+    """Retriever base class.
+    """
     @abstractmethod
     def __init__(self, n_docs=1):
         self.n_docs = n_docs
@@ -867,8 +762,8 @@ def se2seq_collate_texts(input_ids, attention_mask, token_type_ids, special_toke
         features['labels']
 
 
-def dragond_encdec_collate_fn(examples, tokenizer,dummy_graph=False):
-    """For DragonEncDecDataset
+def dragon_collate_fn(examples, tokenizer,dummy_graph=False):
+    """For DragonDataset of encoder-decoder architecture.
     """
     # Tensors of shape [batch_size, num_choices, max_seq_length] (written separately for clarity)
     input_ids = [example[0] for example in examples]
@@ -918,10 +813,6 @@ def load_data(args, dataset_cls, collate_fn, corrupt=True, num_workers=1, dummy_
     Returns:
         train_dataloader, dev_dataloader, test_dataloader
     """
-    if dataset_cls == DragonDataset and corrupt is False:
-        logging.warning('Dataset(DragonDataset) is for pretrain, but corrupt is set to False.')
-    if dataset_cls == DragonEncDecDataset and not collate_fn in [dragond_encdec_collate_fn]:
-        raise ValueError('Dataset(DragonEncDecDataset) and collate_fn(dragond_encdec_collate_fn) should be used together.')
     if dummy_graph:
         collate_fn = partial(collate_fn, dummy_graph=True)
     num_relations = args.num_relations
