@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import os
 import pickle
 import random
@@ -36,7 +37,7 @@ class DragonDataset(Dataset):
                  link_drop_probability_in_which_keep=0.2, link_negative_sample_size=64,
                  corrupt_graph=False, corrupt_text=False, span_mask=False,
                  mlm_probability=0.15, truncation_side='right', encoder_input='question',
-                 decoder_label='answer'):
+                 decoder_label='answer', prefix_ratio=0.5):
         """
         Args:
         adj_path: the path to a monilithic adj pickle (legacy) or path to a folder containing adj pickle files
@@ -45,13 +46,17 @@ class DragonDataset(Dataset):
         encoder_input: the input to the encoder. Can be 'question', 'context', or 'contextualized_question'
         """
         # Valid pairs
-        # - Pretraining: encoder_input = 'context', decoder_label = 'context_label' | 'context'
+        # - Pretraining (MLM): encoder_input = 'context', decoder_label = 'context_label' | 'context'
+        # - Pretraining (Completion): encoder_input = 'context_prefix', decoder_label = 'context_suffix'
         # - Finetuning: encoder_input = 'question' | 'retrieval_augmented_question', decoder_label = 'answer'
                 # assert is file is legacy_mode; else assert it is a folder
-        assert encoder_input in ['question', 'context', 'retrieval_augmented_question']
-        assert decoder_label  in ['answer', 'context_label', 'context']
+        assert encoder_input in ['question', 'context', 'context_prefix', 'retrieval_augmented_question']
+        assert decoder_label  in ['answer', 'context_label',  'context', 'context_suffix']
         if decoder_label == 'context_label':
             assert corrupt_text, "corrupt_text must be True for MLM tasks (when decoder_label='context_label')"
+        if encoder_input == 'context_prefix' or decoder_label == 'context_suffix':
+            assert encoder_input == 'context_prefix' and decoder_label == 'context_suffix', \
+                "'context_prefix' and 'context_suffix' must be used together'"
         if legacy_adj:
             assert os.path.isfile(adj_path), "adj_path should be a file in legacy mode"
         else:
@@ -104,6 +109,9 @@ class DragonDataset(Dataset):
         # For retrieval
         if encoder_input == 'retrieval_augmented_question':
             self.retriever = Retriever()
+
+        # For prefix completion
+        self.prefix_ratio = prefix_ratio
 
     def __len__(self):
         return len(self.examples)
@@ -435,6 +443,10 @@ class DragonDataset(Dataset):
             encoder_input = context
         elif self.encoder_input == 'question':
             encoder_input = question
+        elif self.encoder_input == 'context_prefix':
+            context_splited = context.split()
+            prefix_length = math.floor(len(context_splited) * self.prefix_ratio)
+            encoder_input = " ".join(context_splited[:prefix_length])
         else: # self.encoder_input == 'retrieval_augmented_question':
             # raise NotImplementedError(f"Encoder input {self.encoder_input} is not implemented")
             # TODO: integrate retrieval
@@ -463,8 +475,12 @@ class DragonDataset(Dataset):
                 decoder_input = context
             elif self.decoder_label == 'answer':
                 decoder_input = answer
+            elif self.decoder_label == 'context_suffix':
+                # As context_prefix and context_suffix are always used together, we should
+                # be able to access the context_splited and prefix_length defined earlier
+                decoder_input = " ".join(context_splited[prefix_length:])
             else:
-                raise NotImplementedError(f"decoder_input {self.decoder_input} is not implemented")
+                raise NotImplementedError(f"decoder_input {self.decoder_label} is not implemented")
             decoder_inputs = self.tokenizer(decoder_input, truncation=True,
                                             max_length=self.max_seq_length,
                                             return_tensors='pt')
