@@ -29,10 +29,9 @@ def suppress_model_loading_warnings(suppress: bool = True):
         yield
 
 
-@dataclass
 class FlamingoConfig(PretrainedConfig):
     """Configuration class to store the configuration of a `FlamingoT5` model."""
-    dim: int                # dimension of the token embedding
+    d_model: int            # dimension of the token embedding
     dim_media: int          # dimension of the media embedding
     lm_name_or_path: str    # name or path of the pretrained LM model
     xattn_heads: int        # number of cross attention heads
@@ -84,7 +83,7 @@ class FlamingoDecoderBaseModel(ABC, PreTrainedModel):
 
             lm_layers[i] = HijackedLMBlock(
                 lm_layer,
-                dim=self.config.dim,
+                dim=self.config.d_model,
                 dim_media=self.config.dim_media,
                 dim_head=self.config.xattn_dim_head,
                 heads=self.config.xattn_heads,
@@ -225,9 +224,11 @@ class FlamingoT5Decoder(FlamingoDecoderBaseModel):
         super().__init__(config, **kwargs)
         assert config.lm_name_or_path is not None and config.lm_name_or_path.startswith("t5"), f"Unexpected lm {config.lm_name_or_path}"
         self.lm = T5ForCausalLM.from_pretrained(config.lm_name_or_path, shared_embedding)
-        assert self.lm.config.d_model == config.dim, \
-            f"LM and Flamingo model must have the same token embedding dimension. Got {self.lm.config.d_model} and {config.dim}"
-        self.config = config
+        assert self.lm.config.d_model == config.d_model, \
+            f"LM and Flamingo model must have the same token embedding dimension. Got {self.lm.config.d_model} and {config.d_model}"
+        # update config with only Flamingo-specific parameters
+        self.lm.config.update(config.to_diff_dict())
+        self.config = self.lm.config
         # hijack lm layers (t5 stack: list[T5Block])
         self._init_layers(self.lm.decoder.block)
 

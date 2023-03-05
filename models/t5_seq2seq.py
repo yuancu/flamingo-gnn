@@ -14,7 +14,8 @@ from transformers.models.encoder_decoder.modeling_encoder_decoder import \
     shift_tokens_right
 from transformers.modeling_outputs import Seq2SeqLMOutput
 
-from t5_lmgnn import DragonEncoderOutput
+from .t5_lmgnn import DragonEncoderOutput, T5DragonEncoder
+from .flamingo_t5 import FlamingoT5Decoder
 
 
 @dataclass
@@ -22,7 +23,16 @@ class T5DragonOutput(Seq2SeqLMOutput):
     link_losses: Union[List, tuple] = None
 
 
-class T5Seq2seq(EncoderDecoderModel):
+class T5Seq2Seq(EncoderDecoderModel):
+    # encoder: T5DragonEncoder
+    # decoder: FlamingoT5Decoder
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.config.decoder_start_token_id = self.decoder.config.decoder_start_token_id
+        self.config.pad_token_id = self.decoder.config.pad_token_id
+        self.config.vocab_size = self.decoder.config.vocab_size
+
     def forward(
         self,
         input_ids: Optional[torch.LongTensor] = None,
@@ -82,6 +92,13 @@ class T5Seq2seq(EncoderDecoderModel):
                 labels, self.config.pad_token_id, self.config.decoder_start_token_id
             )
 
+        # prepare media inputs
+        gnn_hidden_states = encoder_outputs.gnn_hidden_states
+        node_type_ids = kwargs_encoder['node_type_ids']
+        adj_lengths = kwargs_encoder['adj_lengths']
+        node_mask_inv = torch.arange(node_type_ids.size(1), device=node_type_ids.device) >= adj_lengths.unsqueeze(1)
+        node_mask = node_mask_inv.logical_not()
+
         # Decode
         decoder_outputs = self.decoder(
             input_ids=decoder_input_ids,
@@ -89,6 +106,8 @@ class T5Seq2seq(EncoderDecoderModel):
             encoder_hidden_states=encoder_hidden_states,
             encoder_attention_mask=attention_mask,
             inputs_embeds=decoder_inputs_embeds,
+            media=gnn_hidden_states,
+            media_mask=node_mask,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             use_cache=use_cache,
@@ -109,7 +128,7 @@ class T5Seq2seq(EncoderDecoderModel):
                 return (loss,) + decoder_outputs + encoder_outputs
             else:
                 return decoder_outputs + encoder_outputs
-    
+
         return T5DragonOutput(
             loss=loss,
             logits=decoder_outputs.logits,
