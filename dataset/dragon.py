@@ -57,6 +57,7 @@ class DragonDataset(Dataset):
         if encoder_input == 'context_prefix' or decoder_label == 'context_suffix':
             assert encoder_input == 'context_prefix' and decoder_label == 'context_suffix', \
                 "'context_prefix' and 'context_suffix' must be used together'"
+            assert not corrupt_text, "corrupt_text must be False for completion tasks"
         if legacy_adj:
             assert os.path.isfile(adj_path), "adj_path should be a file in legacy mode"
         else:
