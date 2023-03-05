@@ -172,6 +172,27 @@ class T5DragonEncoder(nn.Module):
     def get_output_embeddings(self):
         return self.lmgnn.backbone.get_output_embeddings()
 
+    def freeze_lm(self):
+        """Freeze weights of the language model.
+        The node embedding is always frozen.
+        """
+        # The first two are for t5 backbone, the last is for the node embedding
+        freeze_patterns= ['encoder.block', 'shared.weight', 'node_emb.emb.weight']
+        for name, param in self.named_parameters():
+            for freeze_pattern in freeze_patterns:
+                if freeze_pattern in name:
+                    param.requires_grad = False
+
+    def unfreeze_lm(self):
+        """Unfreeze weights of the language model.
+        The node embedding is always frozen.
+        """
+        unfreeze_patterns= ['encoder.block', 'shared.weight']
+        for name, param in self.named_parameters():
+            for unfreeze_pattern in unfreeze_patterns:
+                if unfreeze_pattern in name:
+                    param.requires_grad = True
+
     @classmethod
     def from_pretrained(cls, args):
         model = construct_encoder(args, model_cls=T5DragonEncoder)
