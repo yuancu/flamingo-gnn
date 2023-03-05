@@ -14,8 +14,7 @@ from transformers.models.encoder_decoder.modeling_encoder_decoder import \
     shift_tokens_right
 from transformers.modeling_outputs import Seq2SeqLMOutput
 
-from .t5_lmgnn import DragonEncoderOutput, T5DragonEncoder
-from .flamingo_t5 import FlamingoT5Decoder
+from .t5_lmgnn import DragonEncoderOutput
 
 
 @dataclass
@@ -24,9 +23,9 @@ class T5DragonOutput(Seq2SeqLMOutput):
 
 
 class T5Seq2Seq(EncoderDecoderModel):
-    # encoder: T5DragonEncoder
-    # decoder: FlamingoT5Decoder
-
+    """This module packs the t5 T5DragonEncoder and Fla5Decoder into a seq2seq model and
+    implements the forward pass.
+    """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.config.decoder_start_token_id = self.decoder.config.decoder_start_token_id
@@ -193,5 +192,5 @@ class T5Seq2Seq(EncoderDecoderModel):
             "input_embeds": input_embeds,
             "cache_output": cache_output,
             "decoder_input_ids": decoder_input_ids,
-            # **kwargs,
+            **kwargs,
         }
