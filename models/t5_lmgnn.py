@@ -167,9 +167,11 @@ class T5DragonEncoder(nn.Module):
                                    gnn_hidden_states=gnn_output)
 
     def get_input_embeddings(self):
+        """Returns the model's input embeddings."""
         return self.lmgnn.backbone.get_input_embeddings()
 
     def get_output_embeddings(self):
+        """Returns the model's output embeddings."""
         return self.lmgnn.backbone.get_output_embeddings()
 
     def freeze_lm(self):
@@ -177,21 +179,27 @@ class T5DragonEncoder(nn.Module):
         The node embedding is always frozen.
         """
         # The first two are for t5 backbone, the last is for the node embedding
-        freeze_patterns= ['encoder.block', 'shared.weight', 'node_emb.emb.weight']
+        freeze_patterns= ['encoder.block', 'encoder.final_layer_norm', 'shared.weight', 'node_emb.emb.weight']
         for name, param in self.named_parameters():
             for freeze_pattern in freeze_patterns:
                 if freeze_pattern in name:
                     param.requires_grad = False
+                    break
 
     def unfreeze_lm(self):
         """Unfreeze weights of the language model.
         The node embedding is always frozen.
         """
-        unfreeze_patterns= ['encoder.block', 'shared.weight']
+        unfreeze_patterns= ['encoder.block', 'encoder.final_layer_norm', 'shared.weight']
         for name, param in self.named_parameters():
             for unfreeze_pattern in unfreeze_patterns:
                 if unfreeze_pattern in name:
                     param.requires_grad = True
+                    break
+
+        for name, param in self.named_parameters():
+            if 'node_emb.emb.weight' in name:
+                param.requires_grad = False
 
     @classmethod
     def from_pretrained(cls, args):
