@@ -166,6 +166,9 @@ class T5DragonEncoder(nn.Module):
                                    link_losses=link_losses,
                                    gnn_hidden_states=gnn_output)
 
+    def get_input_embeddings(self):
+        return self.lmgnn.backbone.get_input_embeddings()
+
     def get_output_embeddings(self):
         return self.lmgnn.backbone.get_output_embeddings()
 
