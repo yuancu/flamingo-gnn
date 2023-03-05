@@ -210,10 +210,19 @@ class FlamingoDecoderBaseModel(ABC, PreTrainedModel):
             for modified_layer in self.get_modified_layers():
                 xattn_past_key_values.append(modified_layer.kv_output)
 
-        out = FlamingoCausalLMOutputWithCrossAttentions(**dataclasses.asdict(out))
-        out.xattn_past_key_values = tuple(xattn_past_key_values) if use_cache else None
+        # failed: out = FlamingoCausalLMOutputWithCrossAttentions(**dataclasses.asdict(out))
+        # according to python issue43905, dataclasses.asdict() will inevitably deepcopy the data,
+        # this is however not supported by optimizer.backward().
+        # the following is a workaround
+        out_with_xattn = FlamingoCausalLMOutputWithCrossAttentions()
+        for field in dataclasses.fields(out):
+            key = field.name
+            val = getattr(out, key)
+            setattr(out_with_xattn, key, val)
+        out_with_xattn.xattn_past_key_values = tuple(xattn_past_key_values) if use_cache else None
+        out_with_xattn.xattn_past_key_values = tuple(xattn_past_key_values) if use_cache else None
 
-        return out
+        return out_with_xattn
 
 
 class FlamingoT5Decoder(FlamingoDecoderBaseModel):
