@@ -10,7 +10,7 @@ from typing import List
 
 import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 from transformers import (AutoTokenizer, BertTokenizer, BertTokenizerFast,
                           RobertaTokenizer, RobertaTokenizerFast, T5Tokenizer,
@@ -30,12 +30,12 @@ class DragonDataset(Dataset):
     language modeling task.
     """
     def __init__(self, statement_path, num_relations, adj_path, legacy_adj,
-                 max_seq_length=256, model_name='roberta', max_node_num=200,
+                 max_seq_length=256, model_name='t5-base', max_node_num=200,
                  cxt_node_connects_all=False,kg_only_use_qa_nodes=False,
                  num_choices=1, link_drop_max_count=100, link_drop_probability=0.2,
                  link_drop_probability_in_which_keep=0.2, link_negative_sample_size=64,
                  corrupt_graph=False, corrupt_text=False, span_mask=False,
-                 mlm_probability=0.15, truncation_side='left', encoder_input='question',
+                 mlm_probability=0.15, truncation_side='right', encoder_input='question',
                  decoder_label='answer'):
         """
         Args:
@@ -56,6 +56,9 @@ class DragonDataset(Dataset):
             assert os.path.isfile(adj_path), "adj_path should be a file in legacy mode"
         else:
             assert os.path.isdir(adj_path), "adj_path should be a folder in non-legacy mode"
+        if corrupt_graph and (encoder_input == 'question' or encoder_input == 'retrieval_augmented_question'):
+            logging.warning("corrupt_graph shouldn't be set for downstream tasks. Setting it to False.")
+            corrupt_graph = False
 
         super(Dataset).__init__()
         # For text data
@@ -67,11 +70,9 @@ class DragonDataset(Dataset):
             self.tokenizer.cls_token = '<extra_id_2>'
             self.tokenizer.mask_token = '<extra_id_3>'
         # Read statements
-        self.examples = self.read_examples(statement_path)
+        self.examples = self.read_statements(statement_path)
         if len(self.examples) == 0:
             raise ValueError("No examples found in the dataset")
-        label_list = list(range(len(self.examples[0].endings)))
-        self.label_map = {label: i for i, label in enumerate(label_list)}
         self.num_choices = num_choices
         self.corrupt_text = corrupt_text
         self.span_mask = span_mask
@@ -84,6 +85,7 @@ class DragonDataset(Dataset):
         self.span_len_dist = [self.geo_p * (1-self.geo_p)**(i - self.span_len_lower) for i in range(self.span_len_lower, self.span_len_upper + 1)]
         self.span_len_dist = [x / (sum(self.span_len_dist)) for x in self.span_len_dist]
         self.encoder_input = encoder_input
+        self.decoder_label = decoder_label
 
         # For graph data
         self.legacy_adj = legacy_adj
@@ -99,74 +101,12 @@ class DragonDataset(Dataset):
         self.link_negative_sample_size = link_negative_sample_size
         self.corrupt_graph = corrupt_graph
 
-        if corrupt_graph and (encoder_input == 'question' or encoder_input == 'retrieval_augmented_question'):
-            logging.warning("corrupt_graph shouldn't be set for downstream tasks. Setting it to False.")
-            self.corrupt_graph = False
-        self.decoder_label = decoder_label
+        # For retrieval
         if encoder_input == 'retrieval_augmented_question':
             self.retriever = Retriever()
 
     def __len__(self):
         return len(self.examples)
-
-    def postprocess_text(self, example):
-        """Adapted from load_input_tensors in utils/data_utils.py L584
-        Args:
-            example: an InputExample object
-        Returns:
-            example_id (str): the id of the example
-            data_tensor (tensor [n_choice, max_seq_len] each): a tuple of input_ids, input_mask, segment_ids, output_mask.
-            nodes_by_sents (list: empty): a list of nodes in the context
-        """
-        # There is no choice in out current setting, this is purely for compatibility with the original code
-
-        context = example.contexts
-        assert isinstance(context, str), "Currently contexts must be a string"
-        question = example.question
-        answer = example.endings
-        # Here we separately encode the question and answer
-        # Warning: we assume the encoder and the decoder share the same tokenizer
-        # but this is not necessarily true!
-        # Padding is removed here, it's done in collate function
-        if self.encoder_input == 'context':
-            encoder_input = context
-        elif self.encoder_input == 'question':
-            encoder_input = question
-        else: # self.encoder_input == 'retrieval_augmented_question':
-            # raise NotImplementedError(f"Encoder input {self.encoder_input} is not implemented")
-            # TODO: integrate retrieval
-            retrieved_doc = self.retriever(question)
-            encoder_input = question + self.tokenizer.sep_token + retrieved_doc
-        encoder_inputs = self.tokenizer(encoder_input, truncation=True,
-                                        max_length=self.max_seq_length,
-                                        return_token_type_ids=True,
-                                        return_special_tokens_mask=True,
-                                        return_tensors='pt')
-        # decoder label:
-        # - context or context_label are for pretraining, where context returns original text, context_label returns
-        #   mlm labels of the context
-        # - answer is for downstream tasks
-        if self.corrupt_text:
-            encoder_input_tensors = (encoder_inputs['input_ids'], encoder_inputs['attention_mask'],
-                                     encoder_inputs['token_type_ids'], encoder_inputs['special_tokens_mask'])
-            mlm_inputs, mlm_labels = self.mlm_corrput_text(encoder_input_tensors)
-            # TODO: attention_mask etc. of the encoder inputs should also be replaced
-            encoder_inputs['input_ids'] = mlm_inputs
-        
-        if self.decoder_label == 'context_label':
-            decoder_labels = mlm_labels
-        else:
-            if self.decoder_label == 'context':
-                decoder_input = context
-            elif self.decoder_label == 'answer':
-                decoder_input = answer
-            else:
-                raise NotImplementedError(f"decoder_input {self.decoder_input} is not implemented")
-            decoder_inputs = self.tokenizer(decoder_input, truncation=True,
-                                            max_length=self.max_seq_length,
-                                            return_tensors='pt')
-            decoder_labels = decoder_inputs['input_ids']
-        return encoder_inputs, decoder_labels
 
     def __getitem__(self, idx):
         # 1. Load text data
@@ -439,7 +379,7 @@ class DragonDataset(Dataset):
         neg_nodes = torch.randint(0, effective_num_nodes, (num_edges, num_corruption), device=device) #[n_triple, n_neg]
         return input_edge_index, input_edge_type, pos_triples, neg_nodes
 
-    def read_examples(self, input_file):
+    def read_statements(self, input_file):
         """
         Retruns:
             example_id (str): id
@@ -471,6 +411,65 @@ class DragonDataset(Dataset):
                         label=label
                     ))
         return examples
+
+    def postprocess_text(self, example):
+        """Adapted from load_input_tensors in utils/data_utils.py L584
+        Args:
+            example: an InputExample object
+        Returns:
+            example_id (str): the id of the example
+            data_tensor (tensor [n_choice, max_seq_len] each): a tuple of input_ids, input_mask, segment_ids, output_mask.
+            nodes_by_sents (list: empty): a list of nodes in the context
+        """
+        # There is no choice in out current setting, this is purely for compatibility with the original code
+
+        context = example.contexts
+        assert isinstance(context, str), "Currently contexts must be a string"
+        question = example.question
+        answer = example.endings
+        # Here we separately encode the question and answer
+        # Warning: we assume the encoder and the decoder share the same tokenizer
+        # but this is not necessarily true!
+        # Padding is removed here, it's done in collate function
+        if self.encoder_input == 'context':
+            encoder_input = context
+        elif self.encoder_input == 'question':
+            encoder_input = question
+        else: # self.encoder_input == 'retrieval_augmented_question':
+            # raise NotImplementedError(f"Encoder input {self.encoder_input} is not implemented")
+            # TODO: integrate retrieval
+            retrieved_doc = self.retriever(question)
+            encoder_input = question + self.tokenizer.sep_token + retrieved_doc
+        encoder_inputs = self.tokenizer(encoder_input, truncation=True,
+                                        max_length=self.max_seq_length,
+                                        return_token_type_ids=True,
+                                        return_special_tokens_mask=True,
+                                        return_tensors='pt')
+        # decoder label:
+        # - context or context_label are for pretraining, where context returns original text, context_label returns
+        #   mlm labels of the context
+        # - answer is for downstream tasks
+        if self.corrupt_text:
+            encoder_input_tensors = (encoder_inputs['input_ids'], encoder_inputs['attention_mask'],
+                                     encoder_inputs['token_type_ids'], encoder_inputs['special_tokens_mask'])
+            mlm_inputs, mlm_labels = self.mlm_corrput_text(encoder_input_tensors)
+            # TODO: attention_mask etc. of the encoder inputs should also be replaced
+            encoder_inputs['input_ids'] = mlm_inputs
+
+        if self.decoder_label == 'context_label':
+            decoder_labels = mlm_labels
+        else:
+            if self.decoder_label == 'context':
+                decoder_input = context
+            elif self.decoder_label == 'answer':
+                decoder_input = answer
+            else:
+                raise NotImplementedError(f"decoder_input {self.decoder_input} is not implemented")
+            decoder_inputs = self.tokenizer(decoder_input, truncation=True,
+                                            max_length=self.max_seq_length,
+                                            return_tensors='pt')
+            decoder_labels = decoder_inputs['input_ids']
+        return encoder_inputs, decoder_labels
 
     def mlm_corrput_text(self, lm_tensors):
         """Adapted from process_lm_data in utils/data_utils.py L124
@@ -700,8 +699,8 @@ class Retriever(ABC):
 
 
 def create_dummy_graph(batch_size):
-    concept_ids = torch.ones((batch_size, 1, 1), dtype=torch.long)
-    node_type_ids = torch.full_like(concept_ids, 3)
+    node_ids = torch.ones((batch_size, 1, 1), dtype=torch.long)
+    node_type_ids = torch.full_like(node_ids, 3)
     node_scores = torch.rand((batch_size, 1, 1, 1), dtype=torch.float32)
     adj_lengths = torch.ones((batch_size, 1), dtype=torch.long)
     special_nodes_mask = torch.full((batch_size, 1, 1), False)
@@ -710,7 +709,7 @@ def create_dummy_graph(batch_size):
     pos_triples = [[[torch.zeros((0), dtype=torch.long) for _ in range(3)]] for _ in range(batch_size)]
     neg_nodes = [[torch.zeros((0, 0), dtype=torch.long)] for _ in range(batch_size)]
     # TODO: do this in one step
-    concept_ids = concept_ids.squeeze(1)
+    node_ids = node_ids.squeeze(1)
     node_type_ids = node_type_ids.squeeze(1)
     node_scores = node_scores.squeeze(1)
     adj_lengths = adj_lengths.squeeze(1)
@@ -719,7 +718,7 @@ def create_dummy_graph(batch_size):
     edge_type = sum(edge_type,[])
     pos_triples = sum(pos_triples,[])
     neg_nodes = sum(neg_nodes,[])
-    return concept_ids, node_type_ids, node_scores, adj_lengths, special_nodes_mask, \
+    return node_ids, node_type_ids, node_scores, adj_lengths, special_nodes_mask, \
         edge_index, edge_type, pos_triples, neg_nodes
 
 
@@ -779,11 +778,11 @@ def dragon_collate_fn(examples, tokenizer,dummy_graph=False):
                                             tokenizer=tokenizer)
     if dummy_graph:
         batch_size = input_ids.size(0)
-        concept_ids, node_type_ids, node_scores, adj_lengths, special_nodes_mask, \
+        node_ids, node_type_ids, node_scores, adj_lengths, special_nodes_mask, \
         edge_index, edge_type, pos_triples, neg_nodes = create_dummy_graph(batch_size)
     else:
         # Tensors of shape [batch_size, num_choices, max_nodes]
-        concept_ids = torch.cat([example[5] for example in examples], dim=0)
+        node_ids = torch.cat([example[5] for example in examples], dim=0)
         node_type_ids = torch.cat([example[6] for example in examples], dim=0)
         # A tensor of shape [batch_size, num_choices, max_nodes, 1]
         node_scores = torch.cat([example[7] for example in examples], dim=0)
@@ -797,12 +796,12 @@ def dragon_collate_fn(examples, tokenizer,dummy_graph=False):
         pos_triples = [example[12][0] for example in examples]
         neg_nodes = [example[13][0] for example in examples]
     return input_ids, attention_mask, token_type_ids, special_token_mask, decoder_labels, \
-        concept_ids, node_type_ids, node_scores, adj_lengths, special_nodes_mask, \
+        node_ids, node_type_ids, node_scores, adj_lengths, special_nodes_mask, \
         edge_index, edge_type, pos_triples, neg_nodes
 
 
 def load_data(args, dataset_cls, collate_fn, corrupt=True, num_workers=1, dummy_graph=False,
-              dataset_kwargs={}):
+              dataset_kwargs=dict()):
     """Construct the dataset and return dataloaders
 
     Args:
