@@ -3,7 +3,7 @@ The gated cross attention is built from lucidrains and dhansmair's implementatio
 The 'media' in the code refers to the other modality, it can be knowledge graph, passage
 embedding, image etc.
 """
-from typing import Tuple
+from typing import Tuple, Optional
 
 import torch
 from einops import rearrange
@@ -59,7 +59,7 @@ class MaskedCrossAttention(nn.Module):
         self,
         x: torch.FloatTensor,
         media: torch.FloatTensor,
-        media_mask: torch.LongTensor | torch.BoolTensor,
+        media_mask: torch.BoolTensor,
         previous_kv: tuple = None,
         output_kv: bool = False
     ):
@@ -145,7 +145,7 @@ class GatedCrossAttentionBlock(nn.Module):
         self,
         x: torch.FloatTensor,
         media: torch.FloatStorage,
-        media_mask: torch.LongTensor | torch.BoolTensor,
+        media_mask: torch.BoolTensor,
         previous_kv: tuple = None,
         output_kv: bool = False
     ):
@@ -204,8 +204,8 @@ class HijackedLMBlock(nn.Module):
 
     def forward(
         self,
-        hidden_states: Tuple[torch.Tensor] | None,
-        use_cache: bool | None = False,
+        hidden_states: Optional[Tuple[torch.Tensor]],
+        use_cache: Optional[bool] = False,
         **kwargs
     ):
         """

@@ -6,11 +6,11 @@ import dataclasses
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import torch
 from torch import nn
-from transformers import PreTrainedModel, PretrainedConfig
+from transformers import PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
 
 from .gated_xattn import HijackedLMBlock
@@ -44,7 +44,7 @@ class FlamingoConfig(PretrainedConfig):
 @dataclass
 class FlamingoCausalLMOutputWithCrossAttentions(CausalLMOutputWithCrossAttentions):
     """Add cross attentions past key values to the base class."""
-    xattn_past_key_values: tuple[torch.FloatTensor] = None
+    xattn_past_key_values: Tuple[torch.FloatTensor] = None
 
 
 class FlamingoDecoderBaseModel(ABC, PreTrainedModel):
