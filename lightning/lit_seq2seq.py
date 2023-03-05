@@ -27,7 +27,7 @@ def create_evaluator():
 
 class LitT5Seq2Seq(pl.LightningModule):
     def __init__(self, args, encoder, decoder, freeze_encoder=True, freeze_decoder=True,
-                 return_val_predictions=False):
+                 do_validation=False, return_val_predictions=False):
         """
         Warning: the decoder_start_token_id will be initialized as the pad_token_id of a
         tokenizer constructed from args.encoder_name_or_path tokenizer.
@@ -52,6 +52,8 @@ class LitT5Seq2Seq(pl.LightningModule):
         tokenizer = AutoTokenizer.from_pretrained(args.encoder_name_or_path)
         self.tokenizer = tokenizer
         self.evaluator = create_evaluator()
+        # The current setting only allows validation in downstream tasks
+        self.do_validation = do_validation
         self.return_val_predictions = return_val_predictions
 
     def training_step(self, batch, batch_idx):
@@ -84,6 +86,8 @@ class LitT5Seq2Seq(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
+        if not self.do_validation:
+            return {}
         input_ids, attention_mask, token_type_ids, special_token_mask, decoder_labels, \
         node_ids, node_type_ids, node_scores, adj_lengths, special_nodes_mask, \
         edge_index, edge_type, pos_triples, neg_nodes = batch
@@ -114,6 +118,8 @@ class LitT5Seq2Seq(pl.LightningModule):
         return scores
 
     def validation_epoch_end(self, outputs):
+        if not self.do_validation:
+            return {}
         if len(outputs) > 0:
             mean_keys = outputs[0].keys()
             mean_keys = set(mean_keys) - set(["predictions", "references"])

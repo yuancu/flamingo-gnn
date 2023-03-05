@@ -232,6 +232,7 @@ pretrain_squad: &pretrain-squad
   misc: &pretrain-squad-misc
     <<: *pretrain-wq-misc
     wandb_mode: offline # online, offline or disabled
+    wandb_project: flamingo-gnn
     world_size: 1
     do_train: True
     do_eval: False
@@ -239,9 +240,15 @@ pretrain_squad: &pretrain-squad
     fast_dev_run: False
     log_interval: 20
     run_name:
+    log_dir: logs
   model:
     <<: *pretrain-wq-model
     encoder_name_or_path: t5-base
+  task:
+    <<: *task-default
+    end_task: 0
+    mlm_task: 1 # actually ignored
+    link_task: 0
 
 pretrain_squad_sanity:
   <<: *pretrain-squad

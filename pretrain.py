@@ -19,6 +19,7 @@ from utils.model_utils import construct_encoder
 def main(args):
     # 1. Load configs
     run_name = args.run_name
+    config_profile = args.config_profile
     args = load_args(config_path=args.config, profile=args.config_profile)
     args.run_name = run_name
 
@@ -55,10 +56,12 @@ def main(args):
 
     # 4. Create pytorch lightning model
     model = LitT5Seq2Seq(args=args,encoder=encoder, decoder=decoder,
-                         freeze_encoder=True, freeze_decoder=True)
+                         freeze_encoder=True, freeze_decoder=True,
+                         do_validation=False)
 
     # 5. Create trainer
-    wandb_logger = WandbLogger(project=args.wandb_project, offline=True, name=args.run_name)
+    wandb_logger = WandbLogger(project=args.wandb_project, offline=True, name=args.run_name,
+                               group=config_profile, save_dir=args.log_dir)
     wandb_logger.experiment.config.update(vars(args))
     trainer = pl.Trainer(max_epochs=args.n_epochs, fast_dev_run=args.fast_dev_run,
                          default_root_dir=os.path.join(args.save_dir, args.run_name),
