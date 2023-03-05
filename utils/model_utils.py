@@ -61,3 +61,35 @@ def construct_encoder(args, model_cls):
                 ie_layer_num=args.ie_layer_num, sep_ie_layers=args.sep_ie_layers,
                 layer_id=args.encoder_layer)
     return model
+
+
+def sep_params(model, loading_info, prefix=""):
+    """Separate the parameters into loaded and not loaded.
+
+    Usage:
+        model = construct_model(args)
+        loading_info = model.loading_info
+        prefix = "lmgnn."
+        loaded_params, not_loaded_params = sep_params(model, loading_info, prefix)
+
+    Returns:
+        loaded_params: the parameters that are loaded from the pretrained model
+            it is also params_to_freeze, small_lr_params
+        not_loaded_params: the parameters that are not loaded from the pretrained model
+            it is also large_lr_params
+    """
+    # WHY is this needed: the keys in the current model have a LMGNN prefix, but the keys
+    # in the loaded model do not have the prefix. So we need to add the prefix to the keys 
+    # Discriminate the parameters into different groups
+    # "all_keys" is already removed from Model.from_pretrained
+    # loaded_roberta_keys = [prefix + k for k in loading_info["all_keys"]]
+    missing_keys = [prefix + k for k in loading_info["missing_keys"]]
+
+    loaded_params = {}
+    not_loaded_params = {}
+    for n, p in model.named_parameters():
+        if n in missing_keys:
+            not_loaded_params[n] = p
+        else:
+            loaded_params[n] = p
+    return loaded_params, not_loaded_params
