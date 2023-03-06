@@ -11,6 +11,7 @@ from typing import List, Optional
 import torch
 import torch.nn as nn
 from torch.nn import CrossEntropyLoss
+from transformers import T5ForConditionalGeneration
 from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
 from transformers.models.t5.modeling_t5 import T5PreTrainedModel, T5Stack
 
@@ -19,8 +20,12 @@ logger = logging.getLogger(__name__)
 
 class T5ForCausalLM(T5PreTrainedModel):
     """Adapted from BartForCausalLM and T5ForConditionalGeneration v4.26.1"""
+    _keys_to_ignore_on_load_missing = [
+        r"decoder.embed_tokens.weight",
+        r"lm_head.weight",
+    ]
 
-    def __init__(self, config, shared_embedding):
+    def __init__(self, config, embed_tokens):
         """
         config: T5Config
         shared_embedding: encoder's embedding
@@ -29,10 +34,12 @@ class T5ForCausalLM(T5PreTrainedModel):
         config = copy.deepcopy(config)
         config.is_decoder = True
         config.is_encoder_decoder = False
-        self.shared = shared_embedding
-        self.decoder = T5Stack(config, shared_embedding)
+        self.shared = embed_tokens
+        self.decoder = T5Stack(config, embed_tokens)
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
+        self.config = config
         self.post_init()
+        self.init_weights()
 
     def forward(
             self,
@@ -106,7 +113,7 @@ class T5ForCausalLM(T5PreTrainedModel):
             input_ids = input_ids[:, -1:]
 
         return {
-            "decoder_input_ids": input_ids,
+            "input_ids": input_ids,
             "past_key_values": past_key_values,
             "encoder_outputs": encoder_outputs,
             "attention_mask": attention_mask,
@@ -114,6 +121,7 @@ class T5ForCausalLM(T5PreTrainedModel):
             "decoder_head_mask": decoder_head_mask,
             "cross_attn_head_mask": cross_attn_head_mask,
             "use_cache": use_cache,
+            **kwargs,
         }
 
     def prepare_decoder_input_ids_from_labels(self, labels: torch.Tensor):
@@ -147,3 +155,17 @@ class T5ForCausalLM(T5PreTrainedModel):
             reordered_decoder_past = reordered_decoder_past + \
                 (reordered_layer_past_states,)
         return reordered_decoder_past
+
+    @classmethod
+    def from_pretrained(cls, *args, **kwargs):
+        # init weights and load from pretrained
+        model = super(cls, T5ForCausalLM).from_pretrained(*args, **kwargs)
+        # make sure that the model is correctly initialized
+        assert model.config.is_decoder, "If you want to use `T5ForCausalLM` make sure that `config.is_decoder=True` for "
+        # Patch: we noticed that the lm_head is not correctly initialized, therefore,
+        # we mannually initialize a T5ForConditionalGeneration model and copy the weights
+        del kwargs['embed_tokens']
+        t5_generation_model = T5ForConditionalGeneration.from_pretrained(*args, **kwargs)
+        with torch.no_grad():
+            model.lm_head.weight.copy_(t5_generation_model.lm_head.weight)
+        return model
