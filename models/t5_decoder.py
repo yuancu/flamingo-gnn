@@ -164,7 +164,8 @@ class T5ForCausalLM(T5PreTrainedModel):
         assert model.config.is_decoder, "If you want to use `T5ForCausalLM` make sure that `config.is_decoder=True` for "
         # Patch: we noticed that the lm_head is not correctly initialized, therefore,
         # we mannually initialize a T5ForConditionalGeneration model and copy the weights
-        del kwargs['embed_tokens']
+        if 'embed_tokens' in kwargs:
+            del kwargs['embed_tokens']
         t5_generation_model = T5ForConditionalGeneration.from_pretrained(*args, **kwargs)
         with torch.no_grad():
             model.lm_head.weight.copy_(t5_generation_model.lm_head.weight)
