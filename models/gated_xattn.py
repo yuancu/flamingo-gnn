@@ -157,9 +157,12 @@ class GatedCrossAttentionBlock(nn.Module):
             media (FloatTensor, optional): media features, e.g. encoded by perceiver resample (n_batch, n_latents, d_media).
             media_mask (LongTensor | BoolTensor, optional): mask for media features (n_batch, n_latents).
         """
-        attn_out, kv = self.attn(x, media, media_mask, previous_kv=previous_kv, output_kv=output_kv)
-        x = x + self.attn_gate.tanh() * attn_out
-        x = x + self.ff_gate.tanh()* self.ff(x)
+        if media is None:
+            kv = None
+        else:
+            attn_out, kv = self.attn(x, media, media_mask, previous_kv=previous_kv, output_kv=output_kv)
+            x = x + self.attn_gate.tanh() * attn_out
+            x = x + self.ff_gate.tanh()* self.ff(x)
         return x, kv
 
 
