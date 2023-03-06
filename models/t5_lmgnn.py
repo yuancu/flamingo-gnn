@@ -557,7 +557,6 @@ class T5GAT(T5Stack):
             if self.args.residual_ie == 2:
                 self.ie_LayerNorm = nn.LayerNorm(self.sent_dim + node_dim)
 
-
     def forward(
         self,
         input_ids=None,

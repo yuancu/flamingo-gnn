@@ -228,11 +228,12 @@ class FlamingoDecoderBaseModel(ABC, PreTrainedModel):
 class FlamingoT5Decoder(FlamingoDecoderBaseModel):
     """T5 decoder model patched with Flamingo cross attention layers"""
     config: FlamingoConfig
+    _keys_to_ignore_on_load_unexpected = ["encoder*"]
 
-    def __init__(self, config: FlamingoConfig, shared_embedding, **kwargs):
+    def __init__(self, config: FlamingoConfig, embed_tokens, **kwargs):
         super().__init__(config, **kwargs)
         assert config.lm_name_or_path is not None and config.lm_name_or_path.startswith("t5"), f"Unexpected lm {config.lm_name_or_path}"
-        self.lm = T5ForCausalLM.from_pretrained(config.lm_name_or_path, shared_embedding)
+        self.lm = T5ForCausalLM.from_pretrained(config.lm_name_or_path, embed_tokens=embed_tokens)
         assert self.lm.config.d_model == config.d_model, \
             f"LM and Flamingo model must have the same token embedding dimension. Got {self.lm.config.d_model} and {config.d_model}"
         # update config with only Flamingo-specific parameters
@@ -245,3 +246,9 @@ class FlamingoT5Decoder(FlamingoDecoderBaseModel):
         if self.config.xattn_every == 1:
             return self.lm.decoder.block
         return filter(lambda layer: isinstance(layer, HijackedLMBlock), self.lm.decoder.block)
+
+    def prepare_inputs_for_generation(self, *args, **kwargs):
+        return self.lm.prepare_inputs_for_generation(*args, **kwargs)
+
+    def _reorder_cache(self, past, beam_idx):
+        return self.lm._reorder_cache(past, beam_idx)
