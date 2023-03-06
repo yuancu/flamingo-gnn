@@ -435,12 +435,12 @@ class TextKGMessagePassing(T5EncoderModel):
         self.dropout_rate = dropout
 
 
-        shared_embedding = self.shared
+        embed_tokens = self.shared
         self.encoder = T5GAT(config, args, k=k, n_ntype=n_ntype, n_etype=n_etype,
-                                  hidden_size=node_dim, dropout=dropout,
-                                  node_dim=node_dim, ie_dim=ie_dim, p_fc=p_fc,
-                                  info_exchange=info_exchange, ie_layer_num=ie_layer_num,
-                                  sep_ie_layers=sep_ie_layers, shared_embedding=shared_embedding)
+                             hidden_size=node_dim, dropout=dropout,
+                             node_dim=node_dim, ie_dim=ie_dim, p_fc=p_fc,
+                             info_exchange=info_exchange, ie_layer_num=ie_layer_num,
+                             sep_ie_layers=sep_ie_layers, embed_tokens=embed_tokens)
 
         self.sent_dim = config.hidden_size
 
@@ -524,45 +524,18 @@ class TextKGMessagePassing(T5EncoderModel):
 
         return lm_outputs, gnn_output
 
-    def get_fake_inputs(self, device="cuda:0"):
-        bs = 20
-        seq_len = 100
-        input_ids = torch.zeros([bs, seq_len], dtype=torch.long).to(device)
-        token_type_ids = torch.zeros([bs, seq_len], dtype=torch.long).to(device)
-        attention_mask = torch.ones([bs, seq_len]).to(device)
-
-        n_node = 200
-        H = torch.zeros([bs, n_node, self.hidden_size]).to(device)
-        n_edges = 3
-        edge_index = torch.tensor([[1, 2, 3], [4, 5, 6]]).to(device)
-        edge_type = torch.zeros(n_edges, dtype=torch.long).fill_(2).to(device)
-        A = (edge_index, edge_type)
-
-        node_type = torch.zeros([bs, n_node], dtype=torch.long).to(device)
-        node_type[:, 0] = 3
-        node_score = torch.zeros([bs, n_node, 1]).to(device)
-        node_score[:, 1] = 180
-        return input_ids, token_type_ids, attention_mask, H, A,  node_type, node_score
-
-    def check_outputs(self, outputs, gnn_output):
-        bs = 20
-        seq_len = 100
-        assert outputs[0].size() == (bs, seq_len, self.sent_dim)
-        n_node = 200
-        assert gnn_output.size() == (bs, n_node, self.hidden_size)
-
 
 class T5GAT(T5Stack):
     """The encoder model in TextKGMessagePassing."""
     def __init__(self, config, args, k, n_ntype, n_etype, hidden_size=200, dropout=0.2,
                  node_dim=200, ie_dim=200, p_fc=0.2, info_exchange=True, ie_layer_num=1,
-                 sep_ie_layers=False, shared_embedding=None):
+                 sep_ie_layers=False, embed_tokens=None):
 
         # init with T5Stack
         encoder_config = copy.deepcopy(config)
         encoder_config.use_cache = False
         encoder_config.is_encoder_decoder = False
-        super().__init__(encoder_config, shared_embedding)
+        super().__init__(encoder_config, embed_tokens)
 
         self.args = args
         self.k = k
@@ -598,6 +571,7 @@ class T5GAT(T5Stack):
         _node_type=None,
         _node_feature_extra=None,
         special_nodes_mask=None,
+        use_cache=None,
         output_attentions=False,
         output_hidden_states=True,
         return_dict=None):
@@ -612,7 +586,7 @@ class T5GAT(T5Stack):
         _node_type: [bs * n_nodes]
         _node_feature_extra: [bs * n_nodes, node_dim]
         """
-        
+
         # Copied from T5Stack.forward -- START
         # decoder-related snippets are removed
         if input_ids is not None and inputs_embeds is not None:
@@ -666,6 +640,7 @@ class T5GAT(T5Stack):
                                          attention_mask=extended_attention_mask,
                                          position_bias=position_bias,
                                          layer_head_mask=layer_head_mask,
+                                         use_cache=use_cache,
                                          output_attentions=output_attentions,
                                          return_dict=True)
             hidden_states = layer_outputs[0]
@@ -702,7 +677,8 @@ class T5GAT(T5Stack):
                     else:
                         context_node_feats = _context_node_feats
                     context_node_lm_feats, context_node_gnn_feats = torch.split(context_node_feats, [context_node_lm_feats.size(1), context_node_gnn_feats.size(1)], dim=1)
-                    hidden_states[:, 0, :] = context_node_lm_feats
+                    # Stop the information from flowing to the LM layers
+                    # hidden_states[:, 0, :] = context_node_lm_feats
                     X[:, 0, :] = context_node_gnn_feats
                     _X = X.view_as(_X)
 
@@ -726,28 +702,3 @@ class T5GAT(T5Stack):
             attentions=all_attentions,
             node_features=_X
         )
-
-    def get_fake_inputs(self, device="cuda:0"):
-        bs = 20
-        seq_len = 100
-        hidden_states = torch.zeros([bs, seq_len, self.sent_dim]).to(device)
-        attention_mask = torch.zeros([bs, 1, 1, seq_len]).to(device)
-        head_mask = [None] * self.num_hidden_layers
-
-        n_node = 200
-        _X = torch.zeros([bs * n_node, self.node_dim]).to(device)
-        n_edges = 3
-        edge_index = torch.tensor([[1, 2, 3], [4, 5, 6]]).to(device)
-        edge_type = torch.zeros(n_edges, dtype=torch.long).fill_(2).to(device)
-        _node_type = torch.zeros([bs, n_node], dtype=torch.long).to(device)
-        _node_type[:, 0] = 3
-        _node_type = _node_type.view(-1)
-        _node_feature_extra = torch.zeros([bs * n_node, self.node_dim]).to(device)
-        return hidden_states, attention_mask, head_mask, _X, edge_index, edge_type, _node_type, _node_feature_extra
-
-    def check_outputs(self, outputs, _X):
-        bs = 20
-        seq_len = 100
-        assert outputs[0].size() == (bs, seq_len, self.sent_dim)
-        n_node = 200
-        assert _X.size() == (bs * n_node, self.node_dim)
