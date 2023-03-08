@@ -16,7 +16,7 @@ from transformers.models.t5.modeling_t5 import T5EncoderModel
 
 from .gnn import GATConvE,  make_one_hot
 from utils.model_utils import construct_encoder
-from utils.layers import MLP, CustomizedEmbedding, MultiheadAttPoolLayer
+from utils.layers import MLP, CustomizedEmbedding
 
 logger = logging.getLogger(__name__)
 
@@ -26,29 +26,25 @@ class DragonEncoderOutput(BaseModelOutputWithPastAndCrossAttentions):
     pooled_gnn_representation: torch.FloatTensor = None
     gnn_hidden_states: Optional[torch.FloatTensor] = None
 
-class LMGNNConfig(PretrainedConfig):
+class T5GNNConfig(PretrainedConfig):
     encoder_name_or_path: str
-    node_dim: int
+    gnn_dim: int            # dimension of the GNN layers, is gnn_dim in the config file
     ie_dim: int             # hidden dim of information exchange layers
-    dropout_rate: float     # node feature dropout rate
+    node_in_dim: int        # node embedding dim of the input node embedding, i.e. wikidata5m is 512
     n_ntype: int            # number of node types
     n_etype: int            # number of edge types
+    num_ie_layer: int       # number of information exchange hidden layers, ie_layer_num in the config file
     num_gnn_layers: int
     num_entity: int         # total number of enitities in the entity embedding
-    node_in_dim: int        # ? what's this
-    n_attention_head: int   # self attention head of t5gnn.pooler
-    fc_dim: int             # ? what's this
-    n_fc_layer: int         # ?
-    p_fc: float             # ? dropout rate of fc layer
-    p_emb: float            # ? dropout rate of edge
-    num_ie_layer: int       # number of information exchange hidden layers
+    dropout_gnn: float      # node feature dropout rate, is dropoutg in the config file
+    dropout_emb: float      # dropout for the embedding layer, is dropouti in the config file
 
 
-class LMGNNEncoder(PreTrainedModel):
+class T5GNNEncoder(PreTrainedModel):
     """We can acquire all intermediate hidden states without hijack the language model,
     by using the returned all_hidden_states.
     """
-    def __init__(self, config: LMGNNConfig, pretrained_node_emb):
+    def __init__(self, config: T5GNNConfig, pretrained_node_emb):
         super().__init__(config)
         # Load language model
         self.lm = T5EncoderModel.from_pretrained(config.encoder_name_or_path)
@@ -58,36 +54,35 @@ class LMGNNEncoder(PreTrainedModel):
 
         # T5GNN
         self.t5gnn_activation = nn.GELU()
-        self.node_emb = CustomizedEmbedding(node_num=config.num_entity, node_out_dim=config.node_dim,
+        self.node_emb = CustomizedEmbedding(node_num=config.num_entity, node_out_dim=config.gnn_dim,
                                             use_contextualized=False, node_in_dim=config.node_in_dim,
                                             pretrained_node_emb=pretrained_node_emb,
                                             freeze_ent_emb=True)
-        self.t5gnn_pooler = MultiheadAttPoolLayer(config.n_attention_head, self.lm.config.d_model, config.node_dim)
-        concat_vec_dim = config.node_dim * 2 + self.lm.config.d_model
-        self.t5gnn_fc = MLP(concat_vec_dim, config.fc_dim, 1, config.n_fc_layer, config.p_fc, layer_norm=True)
-        self.dropout_embed = nn.Dropout(config.p_emb)
-        self.t5gnn_dropout_fc = nn.Dropout(config.p_fc)
+        self.dropout_embed = nn.Dropout(config.dropout_emb)
 
         # Texe message passing
-        self.emb_node_type = nn.Linear(config.n_ntype, config.node_dim // 2)
-        self.Vh = nn.Linear(config.node_dim, config.node_dim)
-        self.Vx = nn.Linear(config.node_dim, config.node_dim)
+        self.emb_node_type = nn.Linear(config.n_ntype, config.gnn_dim // 2)
+        self.Vh = nn.Linear(config.gnn_dim, config.gnn_dim)
+        self.Vx = nn.Linear(config.gnn_dim, config.gnn_dim)
         self.activation_node_type = nn.GELU()
         self.activation_gnn_residual = nn.GELU()
-        self.dropout_gnn_residual = nn.Dropout(0.1)
-        self.gnn_blocks = [GNNBlock(config.n_ntype,
-                                    config.n_etype,
-                                    sent_dim=self.lm.config.d_model,
-                                    node_dim=config.node_dim,
-                                    ie_dim=config.ie_dim)
-                           for _ in range(config.num_gnn_layers)]
+        self.dropout_gnn_residual = nn.Dropout(config.dropout_gnn)
+        # shared edge encoder
+        edge_encoder = torch.nn.Sequential(
+            torch.nn.Linear(config.n_etype + 1 + config.n_ntype * 2, config.gnn_dim),
+            torch.nn.BatchNorm1d(config.gnn_dim),
+            torch.nn.ReLU(),
+            torch.nn.Linear(config.gnn_dim, config.gnn_dim))
+        self.gnn_blocks = nn.ModuleList(
+            [GNNBlock(edge_encoder,
+                      config.n_ntype,
+                      config.n_etype,
+                      sent_dim=self.lm.config.d_model,
+                      node_dim=config.gnn_dim,
+                      ie_dim=config.ie_dim)
+             for _ in range(config.num_gnn_layers)])
 
         # T5GAT
-        self.edge_encoder = torch.nn.Sequential(
-            torch.nn.Linear(config.n_etype + 1 + config.n_ntype * 2, config.node_dim),
-            torch.nn.BatchNorm1d(config.node_dim),
-            torch.nn.ReLU(),
-            torch.nn.Linear(config.node_dim, config.node_dim))
         self.activation_gat = nn.GELU()
         self.dropout_gat = nn.Dropout(0.1)
 
@@ -110,8 +105,8 @@ class LMGNNEncoder(PreTrainedModel):
     def forward(
         self,
         node_ids,
-        node_type_ids,  # DragonEncoder didn' use it, directly pass it to T5GNN
-        adj_lengths,    # directly passed to T5GNN
+        node_type_ids,
+        adj_lengths,
         edge_index,
         edge_type,
         **kwargs
@@ -148,7 +143,7 @@ class LMGNNEncoder(PreTrainedModel):
         # Originally in TextMessagePassing
         # embed type
         batch_size, n_nodes = node_type_ids.shape[:2]
-        T = make_one_hot(node_type_ids.view(-1).contiguous(), self.n_ntype).view(batch_size, n_nodes, self.config.n_ntype)
+        T = make_one_hot(node_type_ids.view(-1).contiguous(), self.config.n_ntype).view(batch_size, n_nodes, self.config.n_ntype)
         node_type_emb = self.activation_node_type(self.emb_node_type(T)) #[batch_size, n_node, dim/2]
 
         X = gnn_input
@@ -173,7 +168,7 @@ class LMGNNEncoder(PreTrainedModel):
         gnn_output = self.dropout_gat(gnn_output)
         
         # Originally in TextMessagePassing
-        gnn_output = self.activation_gnn_residual(self.Vh(gnn_input) + self.Vt(gnn_output))
+        gnn_output = self.activation_gnn_residual(self.Vh(gnn_input) + self.Vx(gnn_output))
         gnn_output = self.dropout_gnn_residual(gnn_output)
         
         # Originally in T5GNN
@@ -190,7 +185,9 @@ class LMGNNEncoder(PreTrainedModel):
 
 
 class GNNBlock(nn.Module):
-    def __init__(self, n_ntype, n_etype, sent_dim, node_dim, ie_dim, dropout=0.2):
+    """Layerwise interaction with language hidden states.
+    """
+    def __init__(self, edge_encoder, n_ntype, n_etype, sent_dim, node_dim, ie_dim, dropout=0.2):
         """
         sent_dim: should bet set as config.hidden_size
         ie_layer: there is a design choice, ie_layer can be shared, or exists one in every layers,
@@ -199,12 +196,12 @@ class GNNBlock(nn.Module):
             I use different info_exchange layer in every gnn block
         """
         super().__init__()
-        self.gnn_layer = GATConvE(node_dim, n_ntype, n_etype, self.edge_encoder)
+        self.gnn_layer = GATConvE(node_dim, n_ntype, n_etype, edge_encoder)
         self.activation = nn.GELU()
         self.node_dropout = nn.Dropout(dropout)
         # information exchange layer
         self.lm2graph_layer = MLP(sent_dim + node_dim, ie_dim, node_dim, 1, 0.1)
-        # self.lm_pooler = 
+        # self.lm_pooler = MultiheadAttPoolLayer(8, config.d_model, config.node_dim)
 
     def forward(
         self,
@@ -233,13 +230,9 @@ class GNNBlock(nn.Module):
         # Propagate info from LM to GNN hidden states (Modality interaction)
         X = X_flatten.view(batch_size, -1, node_dim) # [bs, max_num_nodes, node_dim]
         # TODO: implement better pooling over the sentence embedding
-        context_node_lm_feats = torch.max(hidden_states, dim=1) # [bs, sent_dim]
+        context_node_lm_feats = torch.amax(hidden_states, dim=1) # [bs, sent_dim]
         context_node_gnn_feats = X[:, 0, :] # [bs, node_dim]
         context_node_feats = torch.cat([context_node_lm_feats, context_node_gnn_feats], dim=1)
         context_node_gnn_feats = self.lm2graph_layer(context_node_feats)
         X[:, 0, :] = context_node_gnn_feats
         return X
-
-
-
-
