@@ -13,10 +13,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from transformers import AutoConfig
-from transformers.modeling_outputs import (BaseModelOutput,
-                                           ModelOutput, )
-from transformers.models.t5.modeling_t5 import (T5EncoderModel, T5Stack)
+from transformers import AutoConfig, PreTrainedModel, PretrainedConfig
+from transformers.modeling_outputs import (BaseModelOutput, ModelOutput,
+                                           BaseModelOutputWithPastAndCrossAttentions)
+from transformers.models.t5.modeling_t5 import (T5EncoderModel, T5Stack, T5Block)
 
 from .gnn import GATConvE, TransEDecoder, DistMultDecoder, RotatEDecoder, make_one_hot
 from utils.model_utils import construct_encoder
@@ -701,3 +701,226 @@ class T5GAT(T5Stack):
             attentions=all_attentions,
             node_features=_X
         )
+
+
+
+
+class GNNBlock(nn.Module):
+    def __init__(self, n_ntype, n_etype, sent_dim, node_dim, ie_dim, dropout=0.2):
+        """
+        sent_dim: should bet set as config.hidden_size
+        ie_layer: there is a design choice, ie_layer can be shared, or exists one in every layers,
+            if create inside, then ie_dim (information exchange dim) is required.
+            To maximize the learning ability, and also because of the changing lm representation,
+            I use different info_exchange layer in every gnn block
+        """
+        super().__init__()
+        self.edge_encoder = torch.nn.Sequential(torch.nn.Linear(n_etype + 1 + n_ntype * 2, node_dim), torch.nn.BatchNorm1d(node_dim), torch.nn.ReLU(), torch.nn.Linear(node_dim, node_dim))
+        self.gnn_layer = GATConvE(node_dim, n_ntype, n_etype, self.edge_encoder)
+        self.activation = nn.GELU()
+        self.node_dropout = nn.Dropout(dropout)
+        # information exchange layer
+        self.ie_layer = MLP(sent_dim + node_dim, ie_dim, sent_dim + node_dim, 1, 0.1)
+        # self.lm_pooler = 
+
+    def forward(
+        self,
+        hidden_states,
+        X,
+        edge_index=None,
+        edge_type=None,
+        node_type=None,
+        node_feature_extra=None,):
+        """
+        hidden_states: [bs, seq_len, sent_dim]
+        X: [batch_size, n_node, d_node]
+        edge_index: [2, n_edges]
+        edge_type: [n_edges]
+        _node_type: [bs * n_nodes]
+        _node_feature_extra: [bs * n_nodes, node_dim]
+        """
+        batch_size = hidden_states.size(0)
+        node_dim = X.size(-1)
+        # _X: [total_n_nodes, node_dim] where `total_n_nodes` = b_size * n_node
+        _X = X.view(-1, node_dim)
+        _X = self.gnn_layer(_X, edge_index, edge_type, node_type, node_feature_extra)
+        _X = self.activation(_X)
+        _X = self.node_dropout(_X)
+
+        # Exchange info between LM and GNN hidden states (Modality interaction)
+        X = _X.view(batch_size, -1, node_dim) # [bs, max_num_nodes, node_dim]
+        # TODO: implement better pooling over the sentence embedding
+        context_node_lm_feats = torch.max(dim=1) # [bs, sent_dim]
+        context_node_gnn_feats = X[:, 0, :] # [bs, node_dim]
+        context_node_feats = torch.cat([context_node_lm_feats, context_node_gnn_feats], dim=1)
+        context_node_feats = self.ie_layer(context_node_feats)
+        context_node_lm_feats, context_node_gnn_feats = torch.split(context_node_feats, [context_node_lm_feats.size(1), context_node_gnn_feats.size(1)], dim=1)
+        X[:, 0, :] = context_node_gnn_feats
+        return X
+
+
+# DEPRECATED
+class HijackedT5Block(nn.Module):
+    """A block of T5 layers with GNN layer injected."""
+    def __init__(self, t5_block, do_gnn, **kwargs):
+        super().__init__()
+        self.lm_block = t5_block
+        self.do_gnn = do_gnn
+        if do_gnn:
+            self.gnn_block = GNNBlock(**kwargs)
+
+    def forward(
+        self,
+        *,
+        X,
+        edge_index,
+        edge_type,
+        _node_type,
+        _node_feature_extra,
+        special_nodes_mask,
+        **kwargs):
+        # t5 block always return tuple, regardless the retrun_dict argument
+        lm_outputs = self.lm_block(**kwargs)
+        if self.do_gnn:
+            lm_hidden_states = lm_outputs[0]
+            X = self.gnn_block(
+                hidden_states=lm_hidden_states,
+                X=X,
+                edge_index=edge_index,
+                edge_type=edge_type,
+                _node_type=_node_type,
+                _node_feature_extra=_node_feature_extra,
+                special_nodes_mask=special_nodes_mask
+            )
+            outputs = lm_outputs + (X,)
+        return outputs
+
+
+# DEPRECATED
+class HijackedLMEncoder(T5EncoderModel):
+    """In order to dynamically capture lm hidden states, we also have
+    to modify the forward pass. This class inherits T5EncoderModel
+    and pass GNN features in parralle to LM features in another flow.
+    
+    - forward is modified to accept extra gnn inputs
+    - encoder is modified to accept extra gnn inputs
+    """
+    def forward(
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        head_mask: Optional[torch.FloatTensor] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        X: Optional[torch.FloatTensor] = None,
+        edge_index: Optional[torch.LongTensor] = None,
+        edge_type: Optional[torch.LongTensor] = None,
+        node_type: Optional[torch.LongTensor] = None,
+        node_feature_extra: Optional[torch.FloatTensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None
+        ) -> Union[Tuple[torch.FloatTensor], BaseModelOutput]:
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        encoder_outputs = self.encoder(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            inputs_embeds=inputs_embeds,
+            head_mask=head_mask,
+            X=X,
+            edge_index=edge_index,
+            edge_type=edge_type,
+            node_type=node_type,
+            node_feature_extra=node_feature_extra,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+        return encoder_outputs
+
+
+class LMGNNConfig(PretrainedConfig):
+    encoder_name_or_path: str
+    node_dim: int
+    ie_dim: int             # hidden dim of information exchange layers
+    dropout_rate: float     # node feature dropout rate
+    n_ntype: int            # number of node types
+    n_etype: int            # number of edge types
+    num_gnn_layers: int
+
+
+class LMGNNEncoder(PreTrainedModel):
+    """We can acquire all intermediate hidden states without hijack the language model,
+    by using the returned all_hidden_states.
+    """
+    def __init__(self, config: LMGNNConfig):
+        super().__init__(config)
+
+        self.lm = T5EncoderModel.from_pretrained(config.encoder_name_or_path)
+        if config.num_gnn_layers > self.lm.config.num_layers:
+            raise ValueError(f"num_gnn_layers {config.num_gnn_layers} should be no greater than"
+                             f"language encoder layers {self.lm.config.num_layers}")
+
+        self.emb_node_type = nn.Linear(config.n_ntype, config.node_dim // 2)
+        # basis_f = 'sin'
+        self.emb_score = nn.Linear(config.node_dim // 2, config.node_dim // 2)
+        self.Vh = nn.Linear(config.node_dim, config.node_dim)
+        self.Vx = nn.Linear(config.node_dim, config.node_dim)
+        self.activation = nn.GELU()
+        self.dropout = nn.Dropout(config.dropout_rate)
+        self.gnn_blocks = [GNNBlock(config.n_ntype,
+                                    config.n_etype,
+                                    sent_dim=self.lm.config.d_model,
+                                    node_dim=config.node_dim,
+                                    ie_dim=config.ie_dim)
+                           for _ in range(config.num_gnn_layers)]
+        self.config = config
+
+    def forward(
+        self,
+        H,
+        A,
+        node_type,
+        node_score,
+        **kwargs
+        ):
+
+        # capture all intermediate hidden states
+        kwargs['output_hidden_states'] = True
+        kwargs['return_dict'] = True
+        lm_outputs: BaseModelOutputWithPastAndCrossAttentions = self.lm(**kwargs)
+        lm_all_hidden_states = lm_outputs.hidden_states  # tuple of #layers of hidden states
+
+        batch_size, n_nodes = node_type.shape[:2]
+
+        # embed type
+        T = make_one_hot(node_type.view(-1).contiguous(), self.n_ntype).view(batch_size, n_nodes, self.n_ntype)
+        node_type_emb = self.activation(self.emb_node_type(T)) #[batch_size, n_node, dim/2]
+
+        # embed score
+        js = torch.arange(self.hidden_size//2).unsqueeze(0).unsqueeze(0).float().to(node_type.device) #[1,1,dim/2]
+        js = torch.pow(1.1, js) #[1,1,dim/2]
+        B = torch.sin(js * node_score) #[batch_size, n_node, dim/2]
+        node_score_emb = self.activation(self.emb_score(B)) #[batch_size, n_node, dim/2]
+
+        X = H
+        edge_index, edge_type = A #edge_index: [2, total_E]   edge_type: [total_E, ]  where total_E is for the batched graph
+        node_type_flatten = node_type.view(-1).contiguous() #[`total_n_nodes`, ]
+        node_feature_extra = torch.cat([node_type_emb, node_score_emb], dim=2).view(node_type_flatten.size(0), -1).contiguous() #[`total_n_nodes`, dim]
+
+        
+        # Design choice: use lask K hidden_states to query GNN
+        # or to use every x hidden_states to query GNN
+        # Currently, I chose the former. As deeper LM features contain more semantic information,
+        # while the shallower LM features contain more linguistic information
+        for gnn_block, lm_hidden_states in zip(self.gnn_blocks, lm_all_hidden_states[-len(self.gnn_blocks):]):
+            X = gnn_block(
+                lm_hidden_states,
+                X,
+                edge_index,
+                edge_type,
+                node_type,
+                node_feature_extra
+            )
+        gnn_output = self.activation(X)
+        gnn_output = self.dropout(gnn_output)
+        return lm_outputs, gnn_output
