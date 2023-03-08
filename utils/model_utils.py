@@ -1,6 +1,8 @@
 import torch
 import numpy as np
 
+from models.t5_lmgnn import T5GNNConfig, T5GNNEncoder
+
 
 # Utils for the encoder
 def get_tweaked_num_relations(num_relations, cxt_node_connects_all):
@@ -16,7 +18,7 @@ def get_tweaked_num_relations(num_relations, cxt_node_connects_all):
     return tweaked_num_relations
 
 
-def construct_encoder(args, model_cls):
+def construct_encoder(args):
     """
     num_relation: the number of relations in the original KG: len(id2relation)
     final_num_relation: the number of relations in the final KG, e.g. len(id2relation) + 2
@@ -35,31 +37,27 @@ def construct_encoder(args, model_cls):
     entity_emb = torch.tensor(entity_emb, dtype=torch.float)
     enity_num, entity_in_dim = entity_emb.size(0), entity_emb.size(1)
     print(f"| num_entities: {enity_num} |")
-    if args.random_ent_emb:
-        entity_emb = None
-        freeze_ent_emb = False
-        entity_in_dim = args.gnn_dim
-    else:
-        freeze_ent_emb = args.freeze_ent_emb
 
     n_ntype = 4
     n_etype = final_num_relation * 2
-    print('final_num_relation', final_num_relation, 'len(id2relation)', num_relation)
-    # It's alreay added once
-    # if args.cxt_node_connects_all:
-    #     n_etype += 2
-    print('n_ntype', n_ntype, 'n_etype', n_etype)
+    print(f"| final_num_relation: {final_num_relation}, len(id2relation): {num_relation} |")
+    print(f"| n_ntype: {n_ntype}, n_etype {n_etype} |")
 
-    model = model_cls(args, args.encoder_name_or_path, k=args.k,
-                n_ntype=n_ntype, n_etype=n_etype, n_node=enity_num,
-                node_dim=args.gnn_dim, node_in_dim=entity_in_dim,
-                n_attention_head=args.att_head_num, fc_dim=args.fc_dim,
-                n_fc_layer=args.fc_layer_num, p_emb=args.dropouti,
-                p_gnn=args.dropoutg, p_fc=args.dropoutf, pretrained_node_emb=entity_emb,
-                freeze_ent_emb=freeze_ent_emb, init_range=args.init_range,
-                ie_dim=args.ie_dim, info_exchange=args.info_exchange,
-                ie_layer_num=args.ie_layer_num, sep_ie_layers=args.sep_ie_layers,
-                layer_id=args.encoder_layer)
+    config = T5GNNConfig(
+        encoder_name_or_path=args.encoder_name_or_path,
+        gnn_dim=args.gnn_dim,
+        ie_dim=args.ie_dim,
+        node_in_dim=entity_in_dim,
+        n_ntype=n_ntype,
+        n_etype=n_etype,
+        num_ie_layer=args.ie_layer_num,
+        num_gnn_layers=args.k,
+        num_entity=enity_num,
+        dropout_gnn=args.dropoutg,
+        dropout_emb=args.dropoutg,
+    )
+
+    model = T5GNNEncoder(config, pretrained_node_emb=entity_emb)
     return model
 
 
