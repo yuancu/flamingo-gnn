@@ -39,14 +39,14 @@ class GATConvE(MessagePassing):
         n_ntype (int): number of node types (e.g. 4)
         n_etype (int): number of edge relation types (e.g. 38)
     """
-    def __init__(self, args, emb_dim, n_ntype, n_etype, edge_encoder, head_count=4, aggr="add"):
+    def __init__(self, emb_dim, n_ntype, n_etype, edge_encoder, head_count=4, aggr="add"):
         super(GATConvE, self).__init__(aggr=aggr)
-        self.args = args
 
         assert emb_dim % 2 == 0
         self.emb_dim = emb_dim
 
-        self.n_ntype = n_ntype; self.n_etype = n_etype
+        self.n_ntype = n_ntype
+        self.n_etype = n_etype
         self.edge_encoder = edge_encoder
 
         #For attention
@@ -119,13 +119,8 @@ class GATConvE(MessagePassing):
         msg = self.linear_msg(torch.cat([x_j, edge_attr], dim=1)).view(-1, self.head_count, self.dim_per_head) #[E, heads, _dim]
         query = self.linear_query(x_j).view(-1, self.head_count, self.dim_per_head) #[E, heads, _dim]
 
-        if self.args.fp16 and self.training and self.args.upcast:
-            with torch.cuda.amp.autocast(enabled=False):
-                query = query.float() / math.sqrt(self.dim_per_head)
-                scores = (query * key.float()).sum(dim=2) #[E, heads]
-        else:
-            query = query / math.sqrt(self.dim_per_head)
-            scores = (query * key).sum(dim=2) #[E, heads]
+        query = query / math.sqrt(self.dim_per_head)
+        scores = (query * key).sum(dim=2) #[E, heads]
 
         src_node_index = edge_index[0] #[E,]
         alpha = softmax(scores, src_node_index) #[E, heads] #group by src side node
@@ -371,4 +366,5 @@ class RotatEDecoder(Decoder):
         return '{}(embedding_size={}, num_relations={}, gamma={}, dist_ord={})'.format(self.__class__.__name__,
                                                                                        self.embedding_dim,
                                                                                        self.num_relations,
-                                                                                       self.gamma)
+                                                                                       self.gamma,
+                                                                                       "?")

@@ -26,6 +26,7 @@ class DragonEncoderOutput(BaseModelOutputWithPastAndCrossAttentions):
     pooled_gnn_representation: torch.FloatTensor = None
     gnn_hidden_states: Optional[torch.FloatTensor] = None
 
+
 class T5GNNConfig(PretrainedConfig):
     encoder_name_or_path: str
     gnn_dim: int            # dimension of the GNN layers, is gnn_dim in the config file
@@ -65,8 +66,10 @@ class T5GNNEncoder(PreTrainedModel):
         self.Vh = nn.Linear(config.gnn_dim, config.gnn_dim)
         self.Vx = nn.Linear(config.gnn_dim, config.gnn_dim)
         self.activation_node_type = nn.GELU()
-        self.activation_gnn_residual = nn.GELU()
-        self.dropout_gnn_residual = nn.Dropout(config.dropout_gnn)
+        self.activation_residual = nn.Sequential(
+            nn.GELU(),
+            nn.Dropout(config.dropout_gnn)
+        )
         # shared edge encoder
         edge_encoder = torch.nn.Sequential(
             torch.nn.Linear(config.n_etype + 1 + config.n_ntype * 2, config.gnn_dim),
@@ -83,8 +86,10 @@ class T5GNNEncoder(PreTrainedModel):
              for _ in range(config.num_gnn_layers)])
 
         # T5GAT
-        self.activation_gat = nn.GELU()
-        self.dropout_gat = nn.Dropout(0.1)
+        self.activation_gat = nn.Sequential(
+            nn.GELU(),
+            nn.Dropout(0.1)
+        )
 
         # config is updated with lm's config
         self.lm.config.update(config.to_diff_dict())
@@ -165,11 +170,9 @@ class T5GNNEncoder(PreTrainedModel):
                 node_feature_extra=node_feature_extra
             )
         gnn_output = self.activation_gat(X)
-        gnn_output = self.dropout_gat(gnn_output)
         
         # Originally in TextMessagePassing
-        gnn_output = self.activation_gnn_residual(self.Vh(gnn_input) + self.Vx(gnn_output))
-        gnn_output = self.dropout_gnn_residual(gnn_output)
+        gnn_output = self.activation_residual(self.Vh(gnn_input) + self.Vx(gnn_output))
         
         # Originally in T5GNN
         node_mask = torch.arange(node_type_ids.size(1), device=node_type_ids.device) >= adj_lengths.unsqueeze(1) #[bs, nodes] 1 means masked out
