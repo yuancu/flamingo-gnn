@@ -14,12 +14,7 @@ from transformers.models.encoder_decoder.modeling_encoder_decoder import \
     shift_tokens_right
 from transformers.modeling_outputs import Seq2SeqLMOutput
 
-from .t5_lmgnn import DragonEncoderOutput
-
-
-@dataclass
-class T5DragonOutput(Seq2SeqLMOutput):
-    link_losses: Union[List, tuple] = None
+from .t5_lmgnn import T5GNNEncoderOutput
 
 
 class T5Seq2Seq(EncoderDecoderModel):
@@ -75,9 +70,9 @@ class T5Seq2Seq(EncoderDecoderModel):
                 **kwargs_encoder,
             )
         elif isinstance(encoder_outputs, tuple):
-            encoder_outputs = DragonEncoderOutput(*encoder_outputs)
+            encoder_outputs = T5GNNEncoderOutput(*encoder_outputs)
 
-        encoder_hidden_states = encoder_outputs[0]
+        encoder_hidden_states = encoder_outputs.last_hidden_state
 
         # optionally project encoder_hidden_states
         if (
@@ -128,7 +123,7 @@ class T5Seq2Seq(EncoderDecoderModel):
             else:
                 return decoder_outputs + encoder_outputs
 
-        return T5DragonOutput(
+        return Seq2SeqLMOutput(
             loss=loss,
             logits=decoder_outputs.logits,
             past_key_values=decoder_outputs.past_key_values,
@@ -138,7 +133,6 @@ class T5Seq2Seq(EncoderDecoderModel):
             encoder_last_hidden_state=encoder_outputs.last_hidden_state,
             encoder_hidden_states=encoder_outputs.hidden_states,
             encoder_attentions=encoder_outputs.attentions,
-            link_losses=encoder_outputs.link_losses,
         )
 
     def prepare_inputs_for_generation(

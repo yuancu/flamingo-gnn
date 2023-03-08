@@ -244,6 +244,7 @@ pretrain_squad: &pretrain-squad
   model:
     <<: *pretrain-wq-model
     encoder_name_or_path: t5-base
+    cxt_node_connects_all: True
   task:
     <<: *task-default
     end_task: 0

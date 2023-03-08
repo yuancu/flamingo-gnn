@@ -15,15 +15,13 @@ from transformers.modeling_outputs import BaseModelOutputWithPastAndCrossAttenti
 from transformers.models.t5.modeling_t5 import T5EncoderModel
 
 from .gnn import GATConvE,  make_one_hot
-from utils.model_utils import construct_encoder
 from utils.layers import MLP, CustomizedEmbedding
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class DragonEncoderOutput(BaseModelOutputWithPastAndCrossAttentions):
-    pooled_gnn_representation: torch.FloatTensor = None
+class T5GNNEncoderOutput(BaseModelOutputWithPastAndCrossAttentions):
     gnn_hidden_states: Optional[torch.FloatTensor] = None
 
 
@@ -128,6 +126,9 @@ class T5GNNEncoder(PreTrainedModel):
                     each entry is torch.tensor(E(variable), ) -> (total E, )
             kwargs: other inputs for language model
         """
+        # save the original config
+        output_hidden_states = kwargs.get('output_hidden_states', False)
+        return_dict = kwargs.get('return_dict', False)
         # capture all intermediate hidden states
         kwargs['output_hidden_states'] = True
         kwargs['return_dict'] = True
@@ -178,12 +179,20 @@ class T5GNNEncoder(PreTrainedModel):
         node_mask = torch.arange(node_type_ids.size(1), device=node_type_ids.device) >= adj_lengths.unsqueeze(1) #[bs, nodes] 1 means masked out
         gnn_output = gnn_output * (~node_mask).float().unsqueeze(2)
 
-        outputs = DragonEncoderOutput()
-        for field in dataclasses.fields(lm_outputs):
-            key = field.name
-            val = getattr(lm_outputs, key)
-            setattr(outputs, key, val)
-        outputs.gnn_hidden_states = gnn_output
+        if not return_dict:
+            outputs = (lm_outputs.last_hidden_state)
+            if output_hidden_states:
+                outputs = outputs + (lm_outputs.hidden_states,)
+            if kwargs.get('output_attentions', False):
+                outputs = outputs + (lm_outputs.attentions,)
+            outputs += (gnn_output,)
+            return outputs
+        outputs = T5GNNEncoderOutput(
+            last_hidden_state=lm_outputs.last_hidden_state,
+            hidden_states=lm_outputs.hidden_states,
+            attentions=lm_outputs.attentions,
+            gnn_hidden_states=gnn_output
+        )
         return outputs
 
 
