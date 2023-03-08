@@ -195,6 +195,13 @@ class T5GNNEncoder(PreTrainedModel):
         )
         return outputs
 
+    def get_input_embeddings(self):
+        return self.lm.get_input_embeddings()
+
+    def freeze_lm(self):
+        for p in self.lm.parameters():
+            p.requires_grad = False
+
 
 class GNNBlock(nn.Module):
     """Layerwise interaction with language hidden states.

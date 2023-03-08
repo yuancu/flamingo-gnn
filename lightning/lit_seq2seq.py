@@ -7,21 +7,14 @@ from transformers import AutoTokenizer
 
 from models.t5_seq2seq import T5Seq2Seq
 from utils.model_utils import sep_params
+from evaluation.squad import compute_score
 
 
 def create_evaluator():
     """It returns a evaluate function that computes rouge and exact match scores."""
-    rouge = load('rouge')
-    exact_match = load('exact_match')
     def evaluate(predictions, references):
-        rouge_score = rouge.compute(predictions=predictions, references=references)
-        em_score = exact_match.compute(predictions=predictions, references=references,
-                                       ignore_case=True, ignore_punctuation=True)
-        scores = {
-            **rouge_score,
-            **em_score
-        }
-        return scores
+        score = compute_score(predictions, references)
+        return score
     return evaluate
 
 
@@ -68,20 +61,19 @@ class LitT5Seq2Seq(pl.LightningModule):
         assert attention_mask.shape == input_ids.shape
         # lm_input_ids as inputs, input_ids as labels, here they share the same attention mask
         output = self.model(
-            input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids,
-            output_mask=special_token_mask, node_ids=node_ids,
-            node_type_ids=node_type_ids, node_scores=node_scores, adj_lengths=adj_lengths,
-            special_nodes_mask=special_nodes_mask, edge_index=edge_index, edge_type=edge_type,
-            pos_triples=pos_triples, neg_nodes=neg_nodes, output_attentions=True, output_hidden_states=True,
-            labels=decoder_labels, return_dict=True)
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            node_ids=node_ids,
+            node_type_ids=node_type_ids,
+            adj_lengths=adj_lengths,
+            edge_index=edge_index,
+            edge_type=edge_type,
+            output_attentions=True,
+            output_hidden_states=True,
+            labels=decoder_labels,
+            return_dict=True)
 
-        link_loss, pos_link_loss, neg_link_loss = output.link_losses
-        lm_loss = output.loss
-        loss = lm_loss + link_loss + pos_link_loss + neg_link_loss
-        self.log('lm_loss', lm_loss)
-        self.log('link_loss', link_loss)
-        self.log('pos_link_loss', pos_link_loss)
-        self.log('neg_link_loss', neg_link_loss)
+        loss = output.loss
         self.log('train_loss', loss)
         return loss
 
@@ -99,12 +91,13 @@ class LitT5Seq2Seq(pl.LightningModule):
         gold_answers = [a.replace(tokenizer.pad_token, '').replace(tokenizer.eos_token, '').strip() for a in gold_answers]
         with torch.no_grad():
             generated = self.model.generate(
-                input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids,
-                output_mask=special_token_mask, node_ids=node_ids,
-                node_type_ids=node_type_ids, node_scores=node_scores, adj_lengths=adj_lengths,
-                special_nodes_mask=special_nodes_mask, edge_index=edge_index, edge_type=edge_type,
-                pos_triples=pos_triples, neg_nodes=neg_nodes
-            )
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                node_ids=node_ids,
+                node_type_ids=node_type_ids,
+                adj_lengths=adj_lengths,
+                edge_index=edge_index,
+                edge_type=edge_type,)
         predictions = tokenizer.batch_decode(generated)
         predictions = [p.replace(tokenizer.pad_token, '').replace(tokenizer.eos_token, '').strip() for p in predictions]
         scores = self.evaluator(predictions, gold_answers)

@@ -10,7 +10,6 @@ from pytorch_lightning.loggers import WandbLogger
 
 from dataset.dragon import DragonDataset, dragon_collate_fn, load_data
 from lightning.lit_seq2seq import LitT5Seq2Seq
-from models.t5_lmgnn import T5DragonEncoder
 from models.flamingo_t5 import FlamingoT5Decoder, FlamingoConfig
 from utils.common import load_args
 from utils.model_utils import construct_encoder
@@ -19,6 +18,7 @@ from utils.model_utils import construct_encoder
 def main(args):
     # 1. Load configs
     run_name = args.run_name
+    mode = 'pretrain' if args.pretrain else 'finetune'
     config_profile = args.config_profile
     args = load_args(config_path=args.config, profile=args.config_profile)
     args.run_name = run_name
@@ -30,19 +30,25 @@ def main(args):
         collate_fn = partial(dragon_collate_fn, dummy_graph=True)
     else:
         collate_fn = partial(dragon_collate_fn, dummy_graph=False)
+    pretrain_dataset_config = {
+        'encoder_input': 'context_prefix',
+        'decoder_label': 'context_suffix',
+        'prefix_ratio': 0.4}
+    finetune_dataset_config = {
+        'encoder_input': 'question',
+        'decoder_label': 'answer'}
     train_loader, dev_loader, _ = load_data(
         args,
         dataset_cls=DragonDataset,
         collate_fn=collate_fn,
         corrupt=False,
         num_workers=8,
-        dataset_kwargs={
-            'encoder_input': 'context_prefix',
-            'decoder_label': 'context_suffix',
-            'prefix_ratio': 0.4})
+        dataset_kwargs=pretrain_dataset_config
+            if mode=='pretrain' else
+            finetune_dataset_config,)
 
     # 3. Create encoder and decoder
-    encoder = construct_encoder(args, model_cls=T5DragonEncoder)
+    encoder = construct_encoder(args)
     # TODO: add a config file for flamingo
     decoder_config = FlamingoConfig(
         d_model=encoder.config.d_model,
@@ -57,7 +63,7 @@ def main(args):
     # 4. Create pytorch lightning model
     model = LitT5Seq2Seq(args=args,encoder=encoder, decoder=decoder,
                          freeze_encoder=True, freeze_decoder=True,
-                         do_validation=False)
+                         do_validation=(mode=='finetune'))
 
     # 5. Create trainer
     wandb_logger = WandbLogger(project=args.wandb_project, offline=True, name=args.run_name,
@@ -83,7 +89,11 @@ if __name__ == '__main__':
     # Parse arguments
     parser = ArgumentParser()
     parser.add_argument('--config', type=str, default='configs/lmgnn.yaml')
-    parser.add_argument('--config-profile', type=str, default='pretrain_squad')
+    parser.add_argument('--config-profile', type=str, required=True)
     parser.add_argument('--run-name', type=str, required=True)
+    parser.add_argument('--pretrain', action='store_true')
+    parser.add_argument('--finetune', action='store_true')
     args = parser.parse_args()
+    if not args.pretrain ^ args.finetune:
+        raise ValueError('Either pretrain or finetune should be set.')
     main(args)
