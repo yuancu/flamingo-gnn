@@ -168,4 +168,4 @@ class LitT5Seq2Seq(pl.LightningModule):
         return optimizer
 
     def on_save_checkpoint(self, checkpoint):
-        del checkpoint['state_dict']['model.encoder.lmgnn.node_emb.emb.weight']
+        del checkpoint['state_dict']['model.encoder.node_emb.emb.weight']
