@@ -8,7 +8,7 @@ import torch
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 
-from dataset.dragon import DragonDataset, dragon_collate_fn, load_data
+from dataset.lmgnn import load_data
 from lightning.lit_seq2seq import LitT5Seq2Seq
 from models.flamingo_t5 import FlamingoT5Decoder, FlamingoConfig
 from utils.common import load_args
@@ -27,25 +27,18 @@ def main(args):
     # Set collator and dataset according to the task: pretrain is mainly devided into two types:
     # with or without graph
     if hasattr(args, 'no_graph') and args.no_graph:
-        collate_fn = partial(dragon_collate_fn, dummy_graph=True)
+        dummy_graph = True
     else:
-        collate_fn = partial(dragon_collate_fn, dummy_graph=False)
-    pretrain_dataset_config = {
-        'encoder_input': 'context_prefix',
-        'decoder_label': 'context_suffix',
-        'prefix_ratio': 0.4}
-    finetune_dataset_config = {
-        'encoder_input': 'question',
-        'decoder_label': 'answer'}
-    train_loader, dev_loader, _ = load_data(
+        dummy_graph = False
+    train_kwargs={'encoder_input': 'contextualized_question', 'decoder_label': 'answer'}
+    val_kwargs={'encoder_input': 'contextualized_question', 'decoder_label': 'raw_answers'}
+    train_loader, val_loader = load_data(
         args,
-        dataset_cls=DragonDataset,
-        collate_fn=collate_fn,
         corrupt=False,
+        dummy_graph=dummy_graph,
         num_workers=8,
-        dataset_kwargs=pretrain_dataset_config
-            if mode=='pretrain' else
-            finetune_dataset_config,)
+        train_kwargs=train_kwargs,
+        val_kwargs=val_kwargs,)
 
     # 3. Create encoder and decoder
     encoder = construct_encoder(args)
@@ -78,7 +71,7 @@ def main(args):
         resume_ckpt = args.resume_ckpt
     else:
         resume_ckpt = None
-    trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=dev_loader,
+    trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=val_loader,
                 ckpt_path=resume_ckpt)
 
 

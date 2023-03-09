@@ -117,7 +117,7 @@ class LMGNNDataset(Dataset):
             edge_index, edge_type = self._load_graph_from_index(idx)
 
         return input_ids, attention_mask, decoder_labels,\
-            node_ids, node_type_ids, node_scores, adj_length, special_nodes_mask,\
+            node_ids, node_type_ids, adj_length,\
             edge_index, edge_type
 
     def _load_graph_from_index(self, idx):
@@ -538,20 +538,15 @@ class Retriever(ABC):
 def create_dummy_graph(batch_size):
     node_ids = torch.ones((batch_size, 1, 1), dtype=torch.long)
     node_type_ids = torch.full_like(node_ids, 3)
-    node_scores = torch.rand((batch_size, 1, 1, 1), dtype=torch.float32)
     adj_lengths = torch.ones((batch_size, 1), dtype=torch.long)
-    special_nodes_mask = torch.full((batch_size, 1, 1), False)
     edge_index = [[torch.zeros((2, 0), dtype=torch.long)] for _ in range(batch_size)]
     edge_type = [[torch.zeros((0,), dtype=torch.long)] for _ in range(batch_size)]
     # TODO: do this in one step
     node_ids = node_ids.squeeze(1)
     node_type_ids = node_type_ids.squeeze(1)
-    node_scores = node_scores.squeeze(1)
     adj_lengths = adj_lengths.squeeze(1)
-    special_nodes_mask = special_nodes_mask.squeeze(1)
     edge_index = sum(edge_index,[])
-    return node_ids, node_type_ids, node_scores, adj_lengths, special_nodes_mask, \
-        edge_index, edge_type
+    return node_ids, node_type_ids, adj_lengths, edge_index, edge_type
 
 
 def se2seq_collate_texts(input_ids, attention_mask, decoder_labels=None, *, tokenizer):
@@ -627,28 +622,26 @@ class T5GNNDataCollator:
 
         if self.dummy_graph:
             batch_size = input_ids.size(0)
-            node_ids, node_type_ids, node_scores, adj_lengths, special_nodes_mask, \
-            edge_index, edge_type = create_dummy_graph(batch_size)
+            node_ids, node_type_ids, adj_lengths, edge_index,\
+                edge_type = create_dummy_graph(batch_size)
         else:
             # Tensors of shape [batch_size, num_choices, max_nodes]
             node_ids = torch.cat([example[3] for example in examples], dim=0)
             node_type_ids = torch.cat([example[4] for example in examples], dim=0)
-            # A tensor of shape [batch_size, num_choices, max_nodes, 1]
-            node_scores = torch.cat([example[5] for example in examples], dim=0)
             # A tensor of shape [batch_size, 1]
-            adj_lengths = torch.cat([example[6] for example in examples], dim=0)
+            adj_lengths = torch.cat([example[5] for example in examples], dim=0)
             # A tensor of shape [batch_size, num_choices, max_nodes]
-            special_nodes_mask = torch.cat([example[7] for example in examples], dim=0)
             # Aggregated by wrapping into a list
-            edge_index = [example[8][0] for example in examples]
-            edge_type = [example[9][0] for example in examples]
+            edge_index = [example[6][0] for example in examples]
+            edge_type = [example[7][0] for example in examples]
         return input_ids, attention_mask, decoder_labels, \
-            node_ids, node_type_ids, node_scores, adj_lengths, special_nodes_mask, \
+            node_ids, node_type_ids, adj_lengths, \
             edge_index, edge_type
 
 
-def load_data(args, corrupt=True, num_workers=1, dummy_graph=False, return_raw_answers=False,
-              dataset_kwargs=dict()):
+def load_data(args, corrupt=True, dummy_graph=False, num_workers=1,
+              train_kwargs={'encoder_input': 'contextualized_question', 'decoder_label': 'answer'},
+              val_kwargs={'encoder_input': 'contextualized_question', 'decoder_label': 'raw_answers'}):
     """Construct the dataset and return dataloaders
 
     Args:
@@ -668,20 +661,25 @@ def load_data(args, corrupt=True, num_workers=1, dummy_graph=False, return_raw_a
         adj_path=args.train_adj,
         model_name=model_name,
         max_seq_length=max_seq_length,
-        **dataset_kwargs)
+        **train_kwargs)
     validation_dataset = LMGNNDataset(
         statement_path=args.dev_statements,
         adj_path=args.dev_adj,
         num_relations=num_relations,
         model_name=model_name,
         max_seq_length=max_seq_length,
-        **dataset_kwargs)
+        **val_kwargs)
     # get tokenizer
-    collator = T5GNNDataCollator(
+    train_collator = T5GNNDataCollator(
         tokenizer=train_dataset.tokenizer,
         corrupt_text=corrupt,
         dummy_graph=dummy_graph,
-        return_raw_answers=return_raw_answers,)
-    train_dataloader = DataLoader(train_dataset, collate_fn=collator, batch_size=args.batch_size,num_workers=num_workers)
-    validation_dataloader = DataLoader(validation_dataset, collate_fn=collator, batch_size=args.eval_batch_size, num_workers=num_workers)
+        return_raw_answers=False,)
+    val_collator = T5GNNDataCollator(
+        tokenizer=validation_dataset.tokenizer,
+        corrupt_text=False,
+        dummy_graph=dummy_graph,
+        return_raw_answers=True,)
+    train_dataloader = DataLoader(train_dataset, collate_fn=train_collator, batch_size=args.batch_size,num_workers=num_workers)
+    validation_dataloader = DataLoader(validation_dataset, collate_fn=val_collator, batch_size=args.eval_batch_size, num_workers=num_workers)
     return train_dataloader, validation_dataloader

@@ -1,7 +1,6 @@
 import numpy as np
 import pytorch_lightning as pl
 import torch
-from evaluate import load
 from torch.optim import AdamW
 from transformers import AutoTokenizer
 
@@ -54,9 +53,9 @@ class LitT5Seq2Seq(pl.LightningModule):
         #     decoder_labels,\
         #     node_ids, node_type_ids, node_scores, adj_lengths, special_nodes_mask,\
         #     edge_index, edge_type, pos_triples, neg_nodes = batch
-        input_ids, attention_mask, token_type_ids, special_token_mask, decoder_labels, \
-        node_ids, node_type_ids, node_scores, adj_lengths, special_nodes_mask, \
-        edge_index, edge_type, pos_triples, neg_nodes = batch
+        input_ids, attention_mask, decoder_labels, \
+            node_ids, node_type_ids, adj_lengths, \
+            edge_index, edge_type = batch
         # for debugging
         assert attention_mask.shape == input_ids.shape
         # lm_input_ids as inputs, input_ids as labels, here they share the same attention mask
@@ -80,15 +79,12 @@ class LitT5Seq2Seq(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         if not self.do_validation:
             return {}
-        input_ids, attention_mask, token_type_ids, special_token_mask, decoder_labels, \
-        node_ids, node_type_ids, node_scores, adj_lengths, special_nodes_mask, \
-        edge_index, edge_type, pos_triples, neg_nodes = batch
+        input_ids, attention_mask, answers, \
+            node_ids, node_type_ids, adj_lengths, \
+            edge_index, edge_type = batch
 
         tokenizer = self.tokenizer
-        # replace ignore index with pad token id
-        decoder_labels[decoder_labels==-100] = tokenizer.pad_token_id
-        gold_answers = tokenizer.batch_decode(decoder_labels)
-        gold_answers = [a.replace(tokenizer.pad_token, '').replace(tokenizer.eos_token, '').strip() for a in gold_answers]
+        gold_answers = answers
         with torch.no_grad():
             generated = self.model.generate(
                 input_ids=input_ids,
