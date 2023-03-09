@@ -56,7 +56,8 @@ class LMGNNDataset(Dataset):
         Valid pairs of encoder_input and decoder_label:
         - Pretraining (Denoise): encoder_input = 'context', decoder_label = 'context'
         - Pretraining (PrefixLM): encoder_input = 'context_prefix', decoder_label = 'context_suffix'
-        - Finetuning: encoder_input = 'question' | 'retrieval_augmented_question', decoder_label = 'answer'
+        - Finetuning: encoder_input = 'question' | 'retrieval_augmented_question' | 'contextualized_question',
+          decoder_label = 'answer'
         - Test: encoder_input = 'question' | 'retrieval_augmented_question', decoder_label = 'raw_answers'
     
         Args:
@@ -66,7 +67,7 @@ class LMGNNDataset(Dataset):
             max_num_relation: the maximum number of kg relations to keep. (deprecated)
             encoder_input: the input to the encoder. Can be 'question', 'context', or 'contextualized_question'
         """
-        assert encoder_input in ['question', 'context', 'context_prefix', 'retrieval_augmented_question']
+        assert encoder_input in ['question', 'context', 'context_prefix', 'retrieval_augmented_question', 'contextualized_question']
         assert decoder_label  in ['answer', 'context', 'context_suffix', 'raw_answers']
         if encoder_input == 'context_prefix' or decoder_label == 'context_suffix':
             assert encoder_input == 'context_prefix' and decoder_label == 'context_suffix', \
@@ -320,6 +321,8 @@ class LMGNNDataset(Dataset):
             encoder_input = context
         elif self.encoder_input == 'question':
             encoder_input = question
+        elif self.encoder_input == 'contextualized_question':
+            encoder_input = 'question: ' + question + ' context: ' + context
         elif self.encoder_input == 'context_prefix':
             context_splited = context.split()
             prefix_length = math.floor(len(context_splited) * self.prefix_ratio)

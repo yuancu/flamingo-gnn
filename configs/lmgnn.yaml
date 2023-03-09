@@ -22,9 +22,6 @@ default: &default
     kg: cpnet  # What KG to use.
     max_num_relation: -1  # max number of KG relation types to keep.
     kg_only_use_qa_nodes: False
-    train_adj: data/csqa/graph/train.graph.adj.pk  # The path to the retrieved KG subgraphs of the training set.
-    dev_adj: data/csqa/graph/dev.graph.adj.pk  # The path to the retrieved KG subgraphs of the dev set.
-    test_adj: data/csqa/graph/test.graph.adj.pk  # The path to the retrieved KG subgraphs of the test set.
     max_node_num: 200  # Max number of nodes / the threshold used to prune nodes.
     subsample: 1.0  # The ratio to subsample the training set.
     n_train: -1  # Number of training examples to use. Setting it to -1 means using the `subsample` argument to determine the training set size instead; otherwise it will override the `subsample` argument.
@@ -32,10 +29,6 @@ default: &default
     dataset: csqa  # dataset name
     data_dir: data  # Path to the data directory
     inhouse: True  # run in-house setting
-    inhouse_train_qids: data/csqa/inhouse_split_qids.txt  # qids of the in-house training set
-    train_statements: data/csqa/statement/train.statement.jsonl
-    dev_statements: data/csqa/statement/dev.statement.jsonl
-    test_statements: data/csqa/statement/test.statement.jsonl
     max_seq_len: 128
     num_dataloader_workers: 0
   task: &task-default
@@ -151,12 +144,6 @@ pretrain_wq: &pretrain-wq
     run_name:
     save_model: 2  # always save
     save_interval: 5
-  deprecated:
-    resume_id: None
-    debug: False
-    use_wandb: True
-    mini_batch_size:
-
 
 pretrain_wq_no_graph:
   <<: *pretrain-wq
@@ -204,20 +191,37 @@ finetune_wq_context:
     <<: *finetune-wq-decode
     retrieve_text: True
 
+squad2_pretrain: &squad2-pretrain
+  train_statements: data/squad2/statement/pt.train.statement.jsonl
+  train_adj: data/squad2/adj_data/pt.noext_train
+  dev_statements: data/squad2/statement/pt.dev.statement.jsonl
+  dev_adj: data/squad2/adj_data/pt.noext_dev
+  test_statements: data/squad2/statement/pt.dev.statement.jsonl
+  test_adj: data/squad2/adj_data/pt.noext_dev
+  legacy_adj: False
+
+squad_pretrain: &squad-pretrain
+  train_statements: data/squad/statement/pt.train.statement.jsonl
+  train_adj: data/squad/adj/pt_train
+  dev_statements: data/squad/statement/pt.validation.statement.jsonl
+  dev_adj: data/squad/adj/pt_validation
+  legacy_adj: False
+
+squad_finetune: &squad-finetune
+  train_statements: data/squad/statement/ft.train.statement.jsonl
+  train_adj: data/squad/adj/ft_train
+  dev_statements: data/squad/statement/ft.validation.statement.jsonl
+  dev_adj: data/squad/adj/ft_validation
+  legacy_adj: False
+
 # TODO: Config the text data loader to load context or question conditionally
 pretrain_squad: &pretrain-squad
   <<: *pretrain-wq
   data: &pretrain-squad-data
     <<: *pretrain-wq-data
-    dataset: squad2
+    <<: *squad-pretrain
+    dataset: squad
     kg_only_use_qa_nodes: False
-    train_statements: data/squad2/statement/pt.train.statement.jsonl
-    train_adj: data/squad2/adj_data/pt.noext_train
-    dev_statements: data/squad2/statement/pt.dev.statement.jsonl
-    dev_adj: data/squad2/adj_data/pt.noext_dev
-    test_statements: data/squad2/statement/pt.dev.statement.jsonl
-    test_adj: data/squad2/adj_data/pt.noext_dev
-    legacy_adj: False
     mlm_on: context
     num_dataloader_workers: 1
     max_seq_len: 196
@@ -294,6 +298,7 @@ finetune_squad: &finetune-squad
   <<: *pretrain-squad
   data: &finetune-squad-data
     <<: *pretrain-squad-data
+    <<: *squad-finetune
     max_seq_len: 64
   decode: &finetune-squad-decode
     # decoder_type: t5
