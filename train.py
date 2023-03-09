@@ -2,14 +2,16 @@
 """
 import os
 from argparse import ArgumentParser
+from datetime import datetime
 
-import torch
 import pytorch_lightning as pl
+import torch
+from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 
 from dataset.lmgnn import load_data
 from lightning.lit_seq2seq import LitT5Seq2Seq
-from models.flamingo_t5 import FlamingoT5Decoder, FlamingoConfig
+from models.flamingo_t5 import FlamingoConfig, FlamingoT5Decoder
 from utils.common import load_args
 from utils.model_utils import construct_encoder
 
@@ -58,12 +60,19 @@ def main(args):
                          do_validation=(mode=='finetune'))
 
     # 5. Create trainer
-    wandb_logger = WandbLogger(project=args.wandb_project, offline=True, name=args.run_name,
+    now = datetime.now().strftime('%d%H%M')
+    run_name = f"{args.run_name}-{now}"
+    if args.wandb_mode in ['offline', 'disabled']:
+        offline = True
+    else:
+        offline = False
+    wandb_logger = WandbLogger(project=args.wandb_project, offline=offline, name=run_name,
                                group=config_profile, save_dir=args.log_dir)
     wandb_logger.experiment.config.update(vars(args))
+    checkpoint_callback = ModelCheckpoint(monitor="em", mode="max", save_weights_only=True,)
     trainer = pl.Trainer(max_epochs=args.n_epochs, fast_dev_run=args.fast_dev_run,
                          default_root_dir=os.path.join(args.save_dir, args.run_name),
-                         gpus=1, logger=wandb_logger)
+                         gpus=1, logger=wandb_logger, callbacks=[checkpoint_callback])
 
     # 6. Train
     if hasattr(args, 'resume_ckpt') and args.resume_ckpt:

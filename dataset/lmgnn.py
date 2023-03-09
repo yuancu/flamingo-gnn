@@ -26,7 +26,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
-from transformers import AutoTokenizer, PreTrainedTokenizer
+from transformers import PreTrainedTokenizer, T5Tokenizer
 from transformers.data import DataCollatorForSeq2Seq
 from transformers import BatchEncoding, PreTrainedTokenizerBase
 
@@ -70,7 +70,7 @@ class LMGNNDataset(Dataset):
         # For text data
         self.max_seq_length = max_seq_length
         # truncation_side is only available in newer versions of transformers
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name, truncation_side=truncation_side)
+        self.tokenizer = T5Tokenizer.from_pretrained(model_name, truncation_side=truncation_side)
         # Read statements
         self.examples = self.read_statements(statement_path)
         if len(self.examples) == 0:
@@ -552,7 +552,7 @@ def se2seq_collate_texts(input_ids, attention_mask, decoder_labels=None, *, toke
             - attention_mask: [batch_size, seq_len]
             - labels: [batch_size, seq_len]
     """
-    collator = DataCollatorForSeq2Seq(tokenizer, max_length=256)
+    collator = DataCollatorForSeq2Seq(tokenizer)
     # Squeeze the choice dimension
     inputs = [input_ids, attention_mask, decoder_labels]
     for i, item in enumerate(inputs):
