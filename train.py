@@ -1,7 +1,6 @@
 """Pretrain the T5-based encoder-decoder architectured dragon model.
 """
 import os
-from functools import partial
 from argparse import ArgumentParser
 
 import torch

@@ -14,27 +14,21 @@ test dataset:
 """
 
 import json
-import logging
 import math
 import os
 import pickle
-import random
 from abc import ABC, abstractmethod
 from collections import namedtuple
-from functools import lru_cache, partial
-from typing import List, Dict
+from functools import lru_cache
 from dataclasses import dataclass
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
-from transformers import (AutoTokenizer, PreTrainedTokenizer, BertTokenizer, BertTokenizerFast,
-                          RobertaTokenizer, RobertaTokenizerFast, T5Tokenizer,
-                          T5TokenizerFast)
+from transformers import AutoTokenizer, PreTrainedTokenizer
 from transformers.data import DataCollatorForSeq2Seq
 from transformers import BatchEncoding, PreTrainedTokenizerBase
-from datasets import load_dataset
 
 from utils.model_utils import get_tweaked_num_relations
 
@@ -64,7 +58,6 @@ class LMGNNDataset(Dataset):
             dataset_name: the name of the dataset. Currently only 'squad_v2' is supported
             adj_path: the path to a monilithic adj pickle (legacy) or path to a folder containing adj pickle files
             legacy_mode: if True, use the monolithic adj pickle file, else the adj_path should be a folder
-            max_num_relation: the maximum number of kg relations to keep. (deprecated)
             encoder_input: the input to the encoder. Can be 'question', 'context', or 'contextualized_question'
         """
         assert encoder_input in ['question', 'context', 'context_prefix', 'retrieval_augmented_question', 'contextualized_question']

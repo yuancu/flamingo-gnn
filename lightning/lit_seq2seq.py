@@ -5,7 +5,6 @@ from torch.optim import AdamW
 from transformers import AutoTokenizer
 
 from models.t5_seq2seq import T5Seq2Seq
-from utils.model_utils import sep_params
 from evaluation.squad import compute_score
 
 
@@ -133,33 +132,9 @@ class LitT5Seq2Seq(pl.LightningModule):
         """Create an optimizer for the model, optionally using different learning rates for different layers.
         If use_ddp is True, the optimizer will be wrapped by DistributedDataParallel.
         """
-        if self.args.different_lr:
-            loading_info = self.model.encoder.loading_info
-            loaded_params, not_loaded_params = sep_params(self.model, loading_info, prefix="lmgnn.")
-            small_lr_params, large_lr_params = loaded_params, not_loaded_params
-            if self.args.use_ddp:
-                assert next(iter(small_lr_params.keys())).startswith('module.'), \
-                    "The small_lr_params should be updated by DDP."
-                assert next(iter(large_lr_params.keys())).startswith('module.'), \
-                    "The large_lr_params should be updated by DDP."
-            no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
-            small_lr = float(self.args.small_lr)
-            large_lr = float(self.args.large_lr)
-            parameters = [
-                {'params': [p for n, p in small_lr_params.items() if not any(
-                    nd in n for nd in no_decay)], 'weight_decay': self.args.weight_decay, 'lr': small_lr},
-                {'params': [p for n, p in small_lr_params.items() if any(
-                    nd in n for nd in no_decay)], 'weight_decay': 0.0, 'lr': small_lr},
-                {'params': [p for n, p in large_lr_params.items() if not any(
-                    nd in n for nd in no_decay)], 'weight_decay': self.args.weight_decay, 'lr': large_lr},
-                {'params': [p for n, p in large_lr_params.items() if any(
-                    nd in n for nd in no_decay)], 'weight_decay': 0.0, 'lr': large_lr},
-            ]
-            optimizer = AdamW(parameters)
-        else:
-            parameters = self.model.parameters()
-            learning_rate = float(self.args.large_lr)
-            optimizer = AdamW(parameters, lr=learning_rate)
+        parameters = self.model.parameters()
+        learning_rate = float(self.args.large_lr)
+        optimizer = AdamW(parameters, lr=learning_rate)
         # Load the optimizer state if resuming
         return optimizer
 

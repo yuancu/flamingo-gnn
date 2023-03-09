@@ -6,149 +6,63 @@ default: &default
     freeze_ent_emb: True  # Whether to freeze the entity embedding layer.
     ie_dim: 200  # number of the hidden units of the MInt operator.
     ie_layer_num: 1  # number of hidden layers in the MInt operator
-    cxt_node_connects_all: False  # Whether to connect the interaction node to all the retrieved KG nodes or only the linked nodes.
+    cxt_node_connects_all: True  # Whether to connect the interaction node to all the retrieved KG nodes or only the linked nodes.
+    encoder_name_or_path: t5-base
   data: &data-default
-    max_num_relation: -1  # max number of KG relation types to keep.
     kg_only_use_qa_nodes: False
     max_node_num: 200  # Max number of nodes / the threshold used to prune nodes.
-    max_seq_len: 128
-    num_dataloader_workers: 0
-  task: &task-default
-    end_task: 1.0  # Task weight for the end task (MCQA)
-    mlm_task: 0.0  # Task weight for the MLM task
-    link_task: 0.0  # Task weight for the LinkPred task
-    mlm_probability: 0.15
+    max_seq_len: 512
+    num_dataloader_workers: 8
+    mlm_probability: 0.2
   optim: &optim-default
     # Optimization
     loss: cross_entropy  # model type
     optim: radam  # learning rate scheduler
-    lr_schedule: fixed  # learning rate scheduler
     batch_size: 256
-    warmup_steps: 150
     max_grad_norm: 1.0  # max grad norm (0 to disable)
-    weight_decay: 0.01  # l2 weight decay strength
     n_epochs: 100  # total number of training epochs to perform.
-    max_epochs_before_stop: 10  # stop training if dev does not increase for N epochs
-    decoder_lr: 0.001  # Learning rate of parameters not in LM
-    mini_batch_size: 1
     eval_batch_size: 64
-    unfreeze_epoch: 4  # Number of the first few epochs in which LM’s parameters are kept frozen.
-    refreeze_epoch: 10000
     init_range: 0.02  # stddev when initializing with normal distribution
     redef_epoch_steps: -1
     # Regularization:
     dropouti: 0.2  # dropout for embedding layer
     dropoutg: 0.2  # dropout for GNN layers
     dropoutf: 0.2  # dropout for fully-connected layers
-    different_lr: True
+    # Customized
+    fp16: True
+    dist_backend: nccl # gloo, nccl or mpi
+    batch_size: 128
+    large_lr: 0.001
+    small_lr: 0.00001
   misc: &misc-default
     mode: train  # run training or evaluation
     save_dir: ./saved_models/  # model output directory
     save_model: 2  # 0: do not save model checkpoints. 1: save if best dev. 2: save always
     load_model_path: None  # The model checkpoint to load in the evaluation mode.
-    run_name: test  # The name of this experiment run.
     resume_checkpoint: None  # The checkpoint to resume training from.
     data_loader_one_process_at_a_time: False
-    log_interval: 10
-
-pretrain_wq: &pretrain-wq
-  <<: *default
-  data: &pretrain-wq-data
-    <<: *data-default
-    data_dir: data
-    dataset: web_question
-    kg: wikidata5m
-    kg_only_use_qa_nodes: False
-    kg_vocab_path: data/wikidata5m/graphvite-transe-wikidata5m.pkl
-    ent_emb_paths: 'data/wikidata5m/entity_embeddings.npy'
-    train_statements: data/web_question_single/statement/train.statement.jsonl
-    train_adj: data/web_question_single/adj_data/train.adj_data.pkl
-    dev_statements: data/web_question_single/statement/dev.statement.jsonl
-    dev_adj: data/web_question_single/adj_data/dev.adj_data.pkl
-    test_statements: data/web_question_single/statement/dev.statement.jsonl
-    test_adj: data/web_question_single/adj_data/dev.adj_data.pkl
-    legacy_adj: True # if true, the adj is a monilithic file, else its the folder to adjs
-    num_relations: 828  # number of relations for wikidata5m
-  model: &pretrain-wq-model
-    <<: *model-default
-    encoder_name_or_path: roberta-large
-    freeze_ent_emb: True
-  optim:  &pretrain-wq-optim
-    <<: *optim-default
-    fp16: True
-    gpu:
-    dist_backend: nccl # gloo, nccl or mpi
-    batch_size: 64
-    unfreeze_epoch: 2
-    large_lr: 0.001
-    small_lr: 0.00001
-    lr_schedule: fixed
-  task:
-    <<: *task-default
-    end_task: 0
-    mlm_task: 1
-    link_task: 1
-  misc: &pretrain-wq-misc
-    <<: *misc-default
+    # added
     wandb_mode: offline # online, offline or disabled
-    wandb_project: DRAGON
+    wandb_project: flamingo-gnn
     world_size: 1
     do_train: True
     do_eval: False
-    load_model_path:
     fast_dev_run: False
     log_interval: 20
     run_name:
-    save_model: 2  # always save
     save_interval: 5
-
-pretrain_wq_no_graph:
-  <<: *pretrain-wq
-  misc:
-    <<: *pretrain-wq-misc
-    no_graph: True
-  task:
-    <<: *task-default
-    end_task: 0
-    mlm_task: 1
-    link_task: 0
-
-finetune_wq: &finetune-wq
-  <<: *pretrain-wq
-  decode: &finetune-wq-decode
-    decoder_type: bart
+    log_dir: logs
     retrieve_text: False
-  misc:
-    <<: *pretrain-wq-misc
-    load_model_path: saved_models/pretrain_wq/ckpt/ckpt-e99.pt
-    fast_dev_run: False
-    resume_ckpt:
-  optim:
-    <<: *pretrain-wq-optim
-    n_epochs: 40
-    batch_size: 64
-
-finetune_wq_context:
-  <<: *finetune-wq
-  decode:
-    <<: *finetune-wq-decode
-    retrieve_text: True
-
-finetune_wq_nograph:
-  <<: *finetune-wq
-  misc:
-    <<: *pretrain-wq-misc
-    load_model_path: saved_models/slurm_pretrain_no_graph/ckpt-e99.pt
-    no_graph: True
 
 
-finetune_wq_context:
-  <<: *finetune-wq
-  decode:
-    <<: *finetune-wq-decode
-    retrieve_text: True
+wikidata5m: &wikidata5m
+  kg: wikidata5m
+  num_relations: 828  # number of relations for wikidata5m
+  ent_emb_paths: data/wikidata5m/entity_embeddings.npy
+  kg_vocab_path: data/wikidata5m/graphvite-transe-wikidata5m.pkl
 
 squad2_pretrain: &squad2-pretrain
+  dataset: squad2
   train_statements: data/squad2/statement/pt.train.statement.jsonl
   train_adj: data/squad2/adj_data/pt.noext_train
   dev_statements: data/squad2/statement/pt.dev.statement.jsonl
@@ -158,6 +72,7 @@ squad2_pretrain: &squad2-pretrain
   legacy_adj: False
 
 squad_pretrain: &squad-pretrain
+  dataset: squad
   train_statements: data/squad/statement/pt.train.statement.jsonl
   train_adj: data/squad/adj/pt_train
   dev_statements: data/squad/statement/pt.validation.statement.jsonl
@@ -165,6 +80,7 @@ squad_pretrain: &squad-pretrain
   legacy_adj: False
 
 squad_finetune: &squad-finetune
+  dataset: squad
   train_statements: data/squad/statement/ft.train.statement.jsonl
   train_adj: data/squad/adj/ft_train
   dev_statements: data/squad/statement/ft.validation.statement.jsonl
@@ -173,68 +89,24 @@ squad_finetune: &squad-finetune
 
 # TODO: Config the text data loader to load context or question conditionally
 pretrain_squad: &pretrain-squad
-  <<: *pretrain-wq
+  <<: *default
   data: &pretrain-squad-data
-    <<: *pretrain-wq-data
+    <<: *data-default
+    <<: *wikidata5m
     <<: *squad-pretrain
-    dataset: squad
-    kg_only_use_qa_nodes: False
-    mlm_on: context
-    num_dataloader_workers: 1
-    max_seq_len: 196
+    max_seq_len: 512
   optim: &pretrain-squad-optim
-    <<: *pretrain-wq-optim
-    different_lr: False
+    <<: *optim-default
     large_lr: 0.0001
     small_lr: 0.00005
-    lr_schedule: warmup_linear
     batch_size: 32
-    unfreeze_epoch: 0
   misc: &pretrain-squad-misc
-    <<: *pretrain-wq-misc
-    wandb_mode: offline # online, offline or disabled
+    <<: *misc-default
     wandb_project: flamingo-gnn
     world_size: 1
-    do_train: True
-    do_eval: False
-    load_model_path:
     fast_dev_run: False
     log_interval: 20
-    run_name:
-    log_dir: logs
-  model:
-    <<: *pretrain-wq-model
-    encoder_name_or_path: t5-base
-    cxt_node_connects_all: True
-  task:
-    <<: *task-default
-    end_task: 0
-    mlm_task: 1 # actually ignored
-    link_task: 0
 
-pretrain_squad_sanity:
-  <<: *pretrain-squad
-  data:
-    <<: *pretrain-squad-data
-    train_statements: data/squad2/statement/sanity.train.statement.jsonl
-    train_adj: data/squad2/adj_data/sanity_train
-    dev_statements: data/squad2/statement/sanity.dev.statement.jsonl
-    dev_adj: data/squad2/adj_data/sanity_dev
-    test_statements: data/squad2/statement/sanity.dev.statement.jsonl
-    test_adj: data/squad2/adj_data/sanity_dev
-    num_dataloader_workers: 0
-    max_seq_len: 192
-  misc:
-    <<: *pretrain-squad-misc
-    log_interval: 4
-  optim:
-    <<: *pretrain-squad-optim
-    different_lr: True
-    large_lr: 0.0001
-    small_lr: 0.00005
-    lr_schedule: warmup_linear
-    batch_size: 4
-    unfreeze_epoch: 0
 
 pretrain_squad_no_graph: &pretrain-squad-no-graph
   <<: *pretrain-squad
@@ -245,26 +117,19 @@ pretrain_squad_no_graph: &pretrain-squad-no-graph
   optim:
     <<: *pretrain-squad-optim
     batch_size: 32
-  task:
-    <<: *task-default
-    end_task: 0
-    mlm_task: 1
-    link_task: 0
+
 
 finetune_squad: &finetune-squad
   <<: *pretrain-squad
   data: &finetune-squad-data
     <<: *pretrain-squad-data
     <<: *squad-finetune
-    max_seq_len: 64
-  decode: &finetune-squad-decode
-    # decoder_type: t5
-    retrieve_text: False
+    max_seq_len: 256
   optim: &finetune-squad-optim
     <<: *pretrain-squad-optim
-    n_epochs: 60
-    batch_size: 128
-  misc:
+    n_epochs: 30
+    batch_size: 96
+  misc: &finetune-squad-misc
     <<: *pretrain-squad-misc
     load_model_path:
     fast_dev_run: False
@@ -277,8 +142,6 @@ finetune_squad_no_graph:
   data:
     <<: *pretrain-squad-data
     max_seq_len: 64
-  decode:
-    retrieve_text: False
   optim:
     <<: *pretrain-squad-optim
     batch_size: 128
@@ -290,13 +153,13 @@ finetune_squad_no_graph:
 
 finetune_squad_retrieval:
   <<: *finetune-squad
-  decode:
-    <<: *finetune-squad-decode
-    retrieve_text: True
   data:
     <<: *finetune-squad-data
-    max_seq_len: 196
+    max_seq_len: 512
   optim:
     <<: *finetune-squad-optim
     n_epochs: 30
     batch_size: 48
+  misc:
+    <<: *finetune-squad-misc
+    retrieve_text: True
