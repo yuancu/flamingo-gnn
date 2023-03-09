@@ -42,28 +42,14 @@ InputExample = namedtuple('InputExample', 'example_id contexts question endings 
 InputFeatures = namedtuple('InputFeatures', 'example_id choices_features label')
 
 
-def load_squadv2(split="validation"):
-    """Load SQuAD v2.0 dataset and convert it to e"""
-    dataset = load_dataset("squad_v2", split=split)
-    statements = [InputExample(
-                    example_id=item['id'],
-                    contexts=item['context'],
-                    question=item['question'],
-                    endings=item['answers']['text'],
-                    label=-100)
-                  for item in dataset
-                  if len(item['answers']['text']) > 0]
-    return statements
-
-
 class LMGNNDataset(Dataset):
     """This dataset additionally outputs decoder inputs on top of DragonDataset with 
     dragond_enc_collate_fn's output. It removes the annoying choices dimension. Besides,
     it doesn't corrupt the graph and the text for the link prediction task and masked
     language modeling task.
     """
-    def __init__(self, dataset_name, split, num_relations, adj_path, max_seq_length=256,
-                 model_name='t5-base', max_node_num=200, cxt_node_connects_all=False,
+    def __init__(self, statement_path, num_relations, adj_path, max_seq_length=256,
+                 model_name='t5-base', max_node_num=200, cxt_node_connects_all=True,
                  kg_only_use_qa_nodes=False, truncation_side='right',
                  encoder_input='question', decoder_label='answer', prefix_ratio=0.5):
         """
@@ -92,12 +78,10 @@ class LMGNNDataset(Dataset):
         # truncation_side is only available in newer versions of transformers
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, truncation_side=truncation_side)
         # Read statements
-        if dataset_name == 'squad_v2':
-            self.examples = load_squadv2(split=split)
-        else:
-            raise NotImplementedError(f"Dataset {dataset_name} is not supported")
+        self.examples = self.read_statements(statement_path)
         if len(self.examples) == 0:
             raise ValueError("No examples found in the dataset")
+
         self.encoder_input = encoder_input
         self.decoder_label = decoder_label
         self.num_choices = 1    # for compatibility with DragonDataset
@@ -288,6 +272,29 @@ class LMGNNDataset(Dataset):
         # edge_index: ([2, E]) * n_choice
         # edge_type: ([E, ]) * n_choice
         return node_ids, node_type_ids, node_scores, adj_length, special_nodes_mask, (edge_index, edge_type)
+
+    def read_statements(self, input_file):
+        """
+        Retruns:
+            example_id (str): id
+            contexts (str): context if exists, otherwise ""
+            question (str): question
+            endings (str): answer
+            label (int): label, -100 in our case
+        """
+        with open(input_file, "r", encoding="utf-8") as f:
+            examples = []
+            for line in tqdm(f.readlines()):
+                item = json.loads(line)
+                examples.append(
+                    InputExample(
+                        example_id=item["id"],
+                        contexts=item["context"],
+                        question=item["question"],
+                        endings=item["answers"],
+                        label=-100
+                    ))
+        return examples
 
     def postprocess_text(self, example):
         """Adapted from load_input_tensors in utils/data_utils.py L584
@@ -637,7 +644,7 @@ class T5GNNDataCollator:
             edge_index, edge_type
 
 
-def load_data(args, dataset_cls, collate_fn, corrupt=True, num_workers=1, dummy_graph=False,
+def load_data(args, corrupt=True, num_workers=1, dummy_graph=False, return_raw_answers=False,
               dataset_kwargs=dict()):
     """Construct the dataset and return dataloaders
 
@@ -647,25 +654,31 @@ def load_data(args, dataset_cls, collate_fn, corrupt=True, num_workers=1, dummy_
         corrupt (bool): whether to corrupt the graph and text
         num_workers (int): number of workers for dataloader
     Returns:
-        train_dataloader, dev_dataloader, test_dataloader
+        train_dataloader, validation_dataloader
     """
-    if dummy_graph:
-        collate_fn = partial(collate_fn, dummy_graph=True)
     num_relations = args.num_relations
     model_name = args.encoder_name_or_path
     max_seq_length = args.max_seq_len
-    train_dataset = dataset_cls(statement_path=args.train_statements, adj_path=args.train_adj, legacy_adj=args.legacy_adj,
-                                num_relations=num_relations, corrupt_graph=corrupt, corrupt_text=corrupt, model_name=model_name,
-                                max_seq_length=max_seq_length, **dataset_kwargs)
-    dev_dataset = dataset_cls(statement_path=args.dev_statements, adj_path=args.dev_adj, legacy_adj=args.legacy_adj,
-                              num_relations=num_relations, corrupt_graph=corrupt, corrupt_text=corrupt, model_name=model_name,
-                              max_seq_length=max_seq_length, **dataset_kwargs)
-    test_dataset = dataset_cls(statement_path=args.test_statements, adj_path=args.test_adj, legacy_adj=args.legacy_adj,
-                               num_relations=num_relations, corrupt_graph=corrupt, corrupt_text=corrupt, model_name=model_name,
-                               max_seq_length=max_seq_length, **dataset_kwargs)
-    # set tokenizer
-    collate_fn = partial(collate_fn, tokenizer=train_dataset.tokenizer)
-    train_dataloader = DataLoader(train_dataset, collate_fn=collate_fn, batch_size=args.batch_size,num_workers=num_workers)
-    dev_dataloader = DataLoader(dev_dataset, collate_fn=collate_fn, batch_size=args.eval_batch_size, num_workers=num_workers)
-    test_dataloader = DataLoader(test_dataset, collate_fn=collate_fn, batch_size=args.eval_batch_size, num_workers=num_workers)
-    return train_dataloader, dev_dataloader, test_dataloader
+    train_dataset = LMGNNDataset(
+        statement_path=args.train_statements,
+        num_relations=num_relations,
+        adj_path=args.train_adj,
+        model_name=model_name,
+        max_seq_length=max_seq_length,
+        **dataset_kwargs)
+    validation_dataset = LMGNNDataset(
+        statement_path=args.dev_statements,
+        adj_path=args.dev_adj,
+        num_relations=num_relations,
+        model_name=model_name,
+        max_seq_length=max_seq_length,
+        **dataset_kwargs)
+    # get tokenizer
+    collator = T5GNNDataCollator(
+        tokenizer=train_dataset.tokenizer,
+        corrupt_text=corrupt,
+        dummy_graph=dummy_graph,
+        return_raw_answers=return_raw_answers,)
+    train_dataloader = DataLoader(train_dataset, collate_fn=collator, batch_size=args.batch_size,num_workers=num_workers)
+    validation_dataloader = DataLoader(validation_dataset, collate_fn=collator, batch_size=args.eval_batch_size, num_workers=num_workers)
+    return train_dataloader, validation_dataloader
