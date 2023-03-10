@@ -3,7 +3,6 @@ This is built on top of LMGNN and DRAGON model.
 This module patches GNN into the encoder of T5 model.
 """
 import logging
-import dataclasses
 from dataclasses import dataclass
 from typing import Optional
 
@@ -15,6 +14,7 @@ from transformers.modeling_outputs import BaseModelOutputWithPastAndCrossAttenti
 from transformers.models.t5.modeling_t5 import T5EncoderModel
 
 from .gnn import GATConvE,  make_one_hot
+from .gated_xattn import MaskedCrossAttention
 from utils.layers import MLP, CustomizedEmbedding
 
 logger = logging.getLogger(__name__)
@@ -161,10 +161,12 @@ class T5GNNEncoder(PreTrainedModel):
         # or to use every x hidden_states to query GNN
         # Currently, I chose the former. As deeper LM features contain more semantic information,
         # while the shallower LM features contain more linguistic information
+        lm_attention_mask = kwargs.get('attention_mask', None)
         for gnn_block, lm_hidden_states in zip(self.gnn_blocks, lm_all_hidden_states[-len(self.gnn_blocks):]):
             X = gnn_block(
-                hidden_states=lm_hidden_states,
                 X=X,
+                hidden_states=lm_hidden_states,
+                hidden_states_mask=lm_attention_mask,
                 edge_index=edge_index,
                 edge_type=edge_type,
                 node_type=node_type_flatten,
@@ -226,13 +228,14 @@ class GNNBlock(nn.Module):
         self.activation = nn.GELU()
         self.node_dropout = nn.Dropout(dropout)
         # information exchange layer
-        self.lm2graph_layer = MLP(sent_dim + node_dim, ie_dim, node_dim, 1, 0.1)
-        # self.lm_pooler = MultiheadAttPoolLayer(8, config.d_model, config.node_dim)
+        self.lm2graph_layer = MLP(node_dim * 2, ie_dim, node_dim, 1, 0.1)
+        self.lm_pooler = MaskedCrossAttention(dim_q=node_dim, dim_kv=sent_dim)
 
     def forward(
         self,
-        hidden_states,
         X,
+        hidden_states,
+        hidden_states_mask,
         edge_index=None,
         edge_type=None,
         node_type=None,
@@ -255,10 +258,21 @@ class GNNBlock(nn.Module):
 
         # Propagate info from LM to GNN hidden states (Modality interaction)
         X = X_flatten.view(batch_size, -1, node_dim) # [bs, max_num_nodes, node_dim]
-        # TODO: implement better pooling over the sentence embedding
-        context_node_lm_feats = torch.amax(hidden_states, dim=1) # [bs, sent_dim]
+        # Implement better pooling over the sentence embedding
+        # Design choices:
+        # - use max | mean pooling
+        # - use multihead self attention as pooling
+        # ✓ use multihead cross attention pooling (where the query is the gnn context node)
         context_node_gnn_feats = X[:, 0, :] # [bs, node_dim]
+        context_node_lm_feats, _ = self.lm_pooler(
+            q=context_node_gnn_feats.unsqueeze(1), # [bs, 1, node_dim]
+            kv=hidden_states, # [bs, seq_len, sent_dim]
+            kv_mask=hidden_states_mask, # [bs, seq_len]
+        )   # [bs, 1, node_dim]
+        context_node_lm_feats = context_node_lm_feats.squeeze(1) # [bs, node_dim]
         context_node_feats = torch.cat([context_node_lm_feats, context_node_gnn_feats], dim=1)
-        context_node_gnn_feats = self.lm2graph_layer(context_node_feats)
-        X[:, 0, :] = context_node_gnn_feats
+        context_node_feats = self.lm2graph_layer(context_node_feats)
+        # residual link
+        context_node_feats = context_node_feats + context_node_gnn_feats
+        X[:, 0, :] = context_node_feats
         return X
