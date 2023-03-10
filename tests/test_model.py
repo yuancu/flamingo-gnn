@@ -1,11 +1,8 @@
 import pickle
-import sys
 
 import pytest
 import torch
 from transformers.optimization import Adafactor
-
-sys.path.append('..')
 
 from dataset.lmgnn import load_data
 from models.flamingo_t5 import FlamingoConfig, FlamingoT5Decoder
@@ -14,7 +11,7 @@ from models.t5_seq2seq import T5Seq2Seq
 from utils.common import load_args
 from utils.model_utils import get_tweaked_num_relations
 
-DUMMY_BATCH_PATH = 'data/dummy_batch.pkl'
+DUMMY_BATCH_PATH = 'tests/dummy_batch.pkl'
 
 @pytest.fixture
 def args():
@@ -26,8 +23,8 @@ def args():
 
 @pytest.fixture
 def encoder(args):
-    # a dummy node embedding of 100 nodes, with dim=512 each 
-    node_emb = torch.randn((100, 512))
+    # a dummy node embedding of 1000 nodes, with dim=512 each 
+    node_emb = torch.randn((1000, 512))
     config = T5GNNConfig(
         encoder_name_or_path=args.encoder_name_or_path,
         gnn_dim=args.gnn_dim,
@@ -42,6 +39,9 @@ def encoder(args):
         dropout_emb=0.1,
     )
     encoder = T5GNNEncoder(config, pretrained_node_emb=node_emb)
+    for n, p in encoder.named_parameters():
+        if 'node_emb.emb' in n:
+            p.retain_grad = False
     return encoder
 
 
@@ -83,7 +83,7 @@ def batch(args):
 
 @pytest.fixture
 def dummy_batch():
-    with open(DUMMY_BATCH_PATH, "wb") as f:
+    with open(DUMMY_BATCH_PATH, "rb") as f:
         dummy_batch = pickle.load(f)
         return dummy_batch
 
@@ -110,7 +110,7 @@ def test_backward(dummy_batch, model):
     (input_ids, attention_mask, decoder_labels,
         node_ids, node_type_ids, adj_lengths,
         edge_index, edge_type) = dummy_batch
-    optimizer = Adafactor(model.parameters(), lr=0.001)
+    optimizer = Adafactor(model.parameters(), lr=0.001, relative_step=False)
     outputs = model(
         input_ids=input_ids,
         attention_mask=attention_mask,
