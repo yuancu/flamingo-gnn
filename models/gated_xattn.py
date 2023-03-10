@@ -32,15 +32,15 @@ class MaskedCrossAttention(nn.Module):
     def __init__(
         self,
         *,
-        dim,
-        dim_media,
+        dim_q,
+        dim_kv,
         dim_head = 64,
         heads = 8,
     ):
         """
         Args:
-            dim (int): dimension of the input language token embedding
-            dim_media (int): dimension of the input media token embedding
+            dim_q (int): dimension of the input query embedding
+            dim_kv (int): dimension of the input key, value embedding
             dim_head (int, optional): dimension of the q, k, v inside the attention head. Defaults to 64.
             heads (int, optional): number of attention heads. Defaults to 8.
         """
@@ -49,29 +49,29 @@ class MaskedCrossAttention(nn.Module):
         self.heads = heads
         inner_dim = dim_head * heads
 
-        self.norm = nn.LayerNorm(dim)
+        self.norm = nn.LayerNorm(dim_q)
 
-        self.to_q = nn.Linear(dim, inner_dim, bias = False)
-        self.to_kv = nn.Linear(dim_media, inner_dim * 2, bias = False)
-        self.to_out = nn.Linear(inner_dim, dim, bias = False)
+        self.to_q = nn.Linear(dim_q, inner_dim, bias = False)
+        self.to_kv = nn.Linear(dim_kv, inner_dim * 2, bias = False)
+        self.to_out = nn.Linear(inner_dim, dim_q, bias = False)
 
     def forward(
         self,
-        x: torch.FloatTensor,
-        media: torch.FloatTensor,
-        media_mask: torch.BoolTensor,
+        q: torch.FloatTensor,
+        kv: torch.FloatTensor,
+        kv_mask: torch.BoolTensor,
         previous_kv: tuple = None,
         output_kv: bool = False
     ):
         """This has the same inputs as the GatedCrossAttentionBlock
         Args:
-            x (FloatTensor):
+            q (FloatTensor):
                 language features (n_batch, n_token, d_token)
-            media (FloatTensor, optional):
+            kv (FloatTensor, optional):
                 media features, represents information from other modality, e.g. encoded by perceiver resample
                 (n_batch, n_latents, d_media). Defaults to None.
-            media_mask (LongTensor | BoolTensor, optional):
-                mask for media features (n_batch, n_latents). Defaults to None.
+            kv_mask (LongTensor | BoolTensor, optional):
+                mask for key, value features (n_batch, n_latents). Defaults to None.
             previous_kv (tuple, optional):
                 tuple of previous keys and values. Passed when caching is used during text generation.
                 Defaults to None.
@@ -82,16 +82,16 @@ class MaskedCrossAttention(nn.Module):
         """
         h = self.heads
 
-        x = self.norm(x)
+        q = self.norm(q)
 
         # d_inner = d_head * n_head
         # (batch, n_token, d_token) -> (batch, n_token, d_inner)
-        q = self.to_q(x)
+        q = self.to_q(q)
         q = q * self.scale
 
         if previous_kv is None:
             # (batch, n_latents, d_media) -> (batch, n_latents, d_inner) for k, v
-            k, v = self.to_kv(media).chunk(2, dim=-1)
+            k, v = self.to_kv(kv).chunk(2, dim=-1)
             q, k, v = rearrange_many((q, k, v), 'b n (h d) -> b h n d', h=h)
         else:
             # media can be ignored, k, v already computed
@@ -101,10 +101,10 @@ class MaskedCrossAttention(nn.Module):
         # compute the attention scores from the queries and keys
         sim = einsum('... i d, ... j d -> ... i j', q, k)  # (batch, n_heads, n_token, n_latents)
 
-        if media_mask is not None:
+        if kv_mask is not None:
             # broadcast the mask in the head and token dimension
-            media_mask = rearrange(media_mask, 'b n -> b 1 1 n')
-            sim = sim.masked_fill(media_mask.logical_not(), float('-inf'))
+            kv_mask = rearrange(kv_mask, 'b n -> b 1 1 n')
+            sim = sim.masked_fill(kv_mask.logical_not(), float('-inf'))
 
         # What is this for? For numerical stability?
         sim = sim - sim.amax(dim = -1, keepdim = True).detach()
@@ -137,7 +137,7 @@ class GatedCrossAttentionBlock(nn.Module):
             ff_mult (int, optional): multiplier for the hidden dimension of the feedforward layer. Defaults to 4.
         """
         super().__init__()
-        self.attn = MaskedCrossAttention(dim=dim, dim_media=dim_media, dim_head=dim_head, heads=heads)
+        self.attn = MaskedCrossAttention(dim_q=dim, dim_kv=dim_media, dim_head=dim_head, heads=heads)
         self.attn_gate = nn.Parameter(torch.tensor([0.]))
 
         self.ff = FeedForward(dim, mult = ff_mult)
