@@ -228,8 +228,8 @@ class GNNBlock(nn.Module):
         self.activation = nn.GELU()
         self.node_dropout = nn.Dropout(dropout)
         # information exchange layer
-        self.lm2graph_layer = MLP(sent_dim + node_dim, ie_dim, node_dim, 1, 0.1)
-        self.lm_pooler = MaskedCrossAttention(node_dim, sent_dim)
+        self.lm2graph_layer = MLP(node_dim * 2, ie_dim, node_dim, 1, 0.1)
+        self.lm_pooler = MaskedCrossAttention(dim_q=node_dim, dim_kv=sent_dim)
 
     def forward(
         self,
@@ -264,13 +264,15 @@ class GNNBlock(nn.Module):
         # - use multihead self attention as pooling
         # ✓ use multihead cross attention pooling (where the query is the gnn context node)
         context_node_gnn_feats = X[:, 0, :] # [bs, node_dim]
-        context_node_lm_feats = self.lm_pooler(
+        context_node_lm_feats, _ = self.lm_pooler(
             q=context_node_gnn_feats.unsqueeze(1), # [bs, 1, node_dim]
             kv=hidden_states, # [bs, seq_len, sent_dim]
             kv_mask=hidden_states_mask, # [bs, seq_len]
         )   # [bs, 1, node_dim]
-        context_node_lm_feats = context_node_lm_feats.squeeze(1) # [bs, sent_dim]
+        context_node_lm_feats = context_node_lm_feats.squeeze(1) # [bs, node_dim]
         context_node_feats = torch.cat([context_node_lm_feats, context_node_gnn_feats], dim=1)
-        context_node_gnn_feats = self.lm2graph_layer(context_node_feats)
-        X[:, 0, :] = context_node_gnn_feats
+        context_node_feats = self.lm2graph_layer(context_node_feats)
+        # residual link
+        context_node_feats = context_node_feats + context_node_gnn_feats
+        X[:, 0, :] = context_node_feats
         return X

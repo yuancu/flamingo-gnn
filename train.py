@@ -3,6 +3,7 @@
 import os
 from argparse import ArgumentParser
 from datetime import datetime
+from pathlib import Path
 
 import pytorch_lightning as pl
 import torch
@@ -66,6 +67,7 @@ def main(args):
         offline = True
     else:
         offline = False
+    Path(args.log_dir).mkdir(parents=True, exist_ok=True)
     wandb_logger = WandbLogger(project=args.wandb_project, offline=offline, name=run_name,
                                group=config_profile, save_dir=args.log_dir)
     wandb_logger.experiment.config.update(vars(args))
