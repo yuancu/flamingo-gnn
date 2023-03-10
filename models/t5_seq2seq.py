@@ -69,7 +69,7 @@ class T5Seq2Seq(EncoderDecoderModel):
                 return_dict=return_dict,
                 **kwargs_encoder,
             )
-        elif isinstance(encoder_outputs, tuple):
+        if isinstance(encoder_outputs, tuple):
             encoder_outputs = T5GNNEncoderOutput(*encoder_outputs)
 
         encoder_hidden_states = encoder_outputs.last_hidden_state

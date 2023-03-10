@@ -129,7 +129,7 @@ class LitT5Seq2Seq(pl.LightningModule):
         return self.validation_step(*args, **kwargs)
 
     def forward(self, *args, **kwargs):
-        return super().forward(*args, **kwargs)
+        return self.model.forward(*args, **kwargs)
 
     def configure_optimizers(self):
         """Create an optimizer for the model, optionally using different learning rates for different layers.

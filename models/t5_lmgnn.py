@@ -182,7 +182,7 @@ class T5GNNEncoder(PreTrainedModel):
         gnn_output = gnn_output * (~node_mask).float().unsqueeze(2)
 
         if not return_dict:
-            outputs = (lm_outputs.last_hidden_state)
+            outputs = (lm_outputs.last_hidden_state,)
             if output_hidden_states:
                 outputs = outputs + (lm_outputs.hidden_states,)
             if kwargs.get('output_attentions', False):

@@ -632,7 +632,7 @@ class T5GNNDataCollator:
             edge_index, edge_type
 
 
-def load_data(args, corrupt=True, dummy_graph=False, num_workers=1,
+def load_data(args, corrupt=False, dummy_graph=False, num_workers=1,
               train_kwargs={'encoder_input': 'contextualized_question', 'decoder_label': 'answer'},
               val_kwargs={'encoder_input': 'contextualized_question', 'decoder_label': 'raw_answers'}):
     """Construct the dataset and return dataloaders
