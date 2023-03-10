@@ -182,7 +182,7 @@ class T5GNNEncoder(PreTrainedModel):
         gnn_output = gnn_output * (~node_mask).float().unsqueeze(2)
 
         if not return_dict:
-            outputs = (lm_outputs.last_hidden_state)
+            outputs = (lm_outputs.last_hidden_state,)
             if output_hidden_states:
                 outputs = outputs + (lm_outputs.hidden_states,)
             if kwargs.get('output_attentions', False):
@@ -263,7 +263,7 @@ class GNNBlock(nn.Module):
         # - use max | mean pooling
         # - use multihead self attention as pooling
         # ✓ use multihead cross attention pooling (where the query is the gnn context node)
-        context_node_gnn_feats = X[:, 0, :] # [bs, node_dim]
+        context_node_gnn_feats = X[:, 0, :].clone() # [bs, node_dim]
         context_node_lm_feats, _ = self.lm_pooler(
             q=context_node_gnn_feats.unsqueeze(1), # [bs, 1, node_dim]
             kv=hidden_states, # [bs, seq_len, sent_dim]
