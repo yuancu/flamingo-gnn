@@ -72,7 +72,8 @@ def main(args):
     checkpoint_callback = ModelCheckpoint(monitor="em", mode="max", save_weights_only=True,)
     trainer = pl.Trainer(max_epochs=args.n_epochs, fast_dev_run=args.fast_dev_run,
                          default_root_dir=os.path.join(args.save_dir, args.run_name),
-                         gpus=1, logger=wandb_logger, callbacks=[checkpoint_callback])
+                         accelerator='gpu', devices=1, logger=wandb_logger,
+                         callbacks=[checkpoint_callback])
 
     # 6. Train
     if hasattr(args, 'resume_ckpt') and args.resume_ckpt:

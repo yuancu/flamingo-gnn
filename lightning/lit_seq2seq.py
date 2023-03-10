@@ -140,7 +140,9 @@ class LitT5Seq2Seq(pl.LightningModule):
         if self.args.optimizer == "adamw":
             optimizer = AdamW(parameters, lr=learning_rate)
         elif self.args.optimizer == "adafactor":
-            optimizer = Adafactor(parameters, lr=learning_rate, scale_parameter=True)
+            # Set according to https://discuss.huggingface.co/t/t5-finetuning-tips/684/3
+            optimizer = Adafactor(parameters, lr=learning_rate, scale_parameter=False,
+                                  clip_threshold=1.0, relative_step=False, warmup_init=True)
         elif self.args.optimizer == "rmsprop":
             optimizer = RMSprop(parameters, lr=learning_rate)
         else:
