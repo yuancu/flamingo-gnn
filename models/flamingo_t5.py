@@ -95,9 +95,8 @@ class FlamingoDecoderBaseModel(ABC, PreTrainedModel):
         raise NotImplementedError
 
     def freeze_lm(self):
-        """ freeze weights of the language model.
+        """Freeze weights of the language model.
         """
-
         for param in self.lm.parameters():
             param.requires_grad = False
 
@@ -110,6 +109,15 @@ class FlamingoDecoderBaseModel(ABC, PreTrainedModel):
         """
         for param in self.lm.parameters():
             param.requires_grad = True
+
+    def freeze_non_lm(self):
+        """Freeze all weights except the language model.
+        This is mainly to check whether the LM works as in its original implementation.
+        """
+        self.unfreeze_lm()
+        for xattn in self.get_modified_layers():
+            for param in xattn.xattn_block.parameters():
+                param.requires_grad = False
 
     def state_dict_trainable(self) -> Dict[str, torch.Tensor]:
         """ include weights in the state dict if they have requires_grad = True"""

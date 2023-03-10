@@ -202,6 +202,13 @@ class T5GNNEncoder(PreTrainedModel):
         for p in self.lm.parameters():
             p.requires_grad = False
 
+    def freeze_non_lm(self):
+        """Freeze all parameters except the language model."""
+        for p in self.parameters():
+            p.requires_grad = False
+        for p in self.lm.parameters():
+            p.requires_grad = True
+
 
 class GNNBlock(nn.Module):
     """Layerwise interaction with language hidden states.

@@ -1,8 +1,9 @@
 import numpy as np
 import pytorch_lightning as pl
 import torch
-from torch.optim import AdamW
+from torch.optim import AdamW, RMSprop
 from transformers import AutoTokenizer
+from transformers.optimization import Adafactor
 
 from models.t5_seq2seq import T5Seq2Seq
 from evaluation.squad import compute_score
@@ -17,7 +18,7 @@ def create_evaluator():
 
 
 class LitT5Seq2Seq(pl.LightningModule):
-    def __init__(self, args, encoder, decoder, freeze_encoder=True, freeze_decoder=True,
+    def __init__(self, args, encoder, decoder, freeze_lm=True, freeze_non_lm=False,
                  do_validation=False, return_val_predictions=False):
         """
         Warning: the decoder_start_token_id will be initialized as the pad_token_id of a
@@ -30,12 +31,14 @@ class LitT5Seq2Seq(pl.LightningModule):
         for n, p in encoder.named_parameters():
             if n.endswith("node_emb.emb.weight"):
                 p.requires_grad = False
-        # Freeze loaded weights from T5, GNN part is not frozen
-        if freeze_encoder:
+        # Freeze loaded weights from T5, GNN and XATTN is not frozen
+        if freeze_lm:
             encoder.freeze_lm()
-        # Freeze decoder
-        if freeze_decoder:
             decoder.freeze_lm()
+        # Freeze the added parts (GNN & XATTN), T5 is not frozen
+        if freeze_non_lm:
+            encoder.freeze_non_lm()
+            decoder.freeze_non_lm()
         # Construct a encoder-decoder model
         model = T5Seq2Seq(encoder=encoder, decoder=decoder)
         self.model = model
@@ -133,8 +136,15 @@ class LitT5Seq2Seq(pl.LightningModule):
         If use_ddp is True, the optimizer will be wrapped by DistributedDataParallel.
         """
         parameters = self.model.parameters()
-        learning_rate = float(self.args.large_lr)
-        optimizer = AdamW(parameters, lr=learning_rate)
+        learning_rate = float(self.args.learning_rate)
+        if self.args.optimizer == "adamw":
+            optimizer = AdamW(parameters, lr=learning_rate)
+        elif self.args.optimizer == "adafactor":
+            optimizer = Adafactor(parameters, lr=learning_rate, scale_parameter=True)
+        elif self.args.optimizer == "rmsprop":
+            optimizer = RMSprop(parameters, lr=learning_rate)
+        else:
+            raise NotImplementedError(f"Optimizer {self.args.optimizer} is not supported.")
         # Load the optimizer state if resuming
         return optimizer
 

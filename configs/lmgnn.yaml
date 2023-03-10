@@ -11,13 +11,12 @@ default: &default
   data: &data-default
     kg_only_use_qa_nodes: False
     max_node_num: 200  # Max number of nodes / the threshold used to prune nodes.
-    max_seq_len: 512
     num_dataloader_workers: 8
     mlm_probability: 0.2
   optim: &optim-default
     # Optimization
     loss: cross_entropy  # model type
-    optim: radam  # learning rate scheduler
+    optimizer: adamw  # the optimizer
     batch_size: 256
     max_grad_norm: 1.0  # max grad norm (0 to disable)
     n_epochs: 100  # total number of training epochs to perform.
@@ -32,8 +31,10 @@ default: &default
     fp16: True
     dist_backend: nccl # gloo, nccl or mpi
     batch_size: 128
-    large_lr: 0.001
-    small_lr: 0.00001
+    learning_rate: 0.001
+    freeze_lm: True
+    freeze_non_lm: False
+    max_seq_len: 512
   misc: &misc-default
     mode: train  # run training or evaluation
     save_dir: ./saved_models/  # model output directory
@@ -45,8 +46,6 @@ default: &default
     wandb_mode: offline # online, offline or disabled
     wandb_project: flamingo-gnn
     world_size: 1
-    do_train: True
-    do_eval: False
     fast_dev_run: False
     log_interval: 20
     run_name:
@@ -94,12 +93,11 @@ pretrain_squad: &pretrain-squad
     <<: *data-default
     <<: *wikidata5m
     <<: *squad-pretrain
-    max_seq_len: 512
   optim: &pretrain-squad-optim
     <<: *optim-default
-    large_lr: 0.0001
-    small_lr: 0.00005
+    learning_rate: 0.0001
     batch_size: 32
+    max_seq_len: 512
   misc: &pretrain-squad-misc
     <<: *misc-default
     wandb_project: flamingo-gnn
@@ -124,11 +122,11 @@ finetune_squad: &finetune-squad
   data: &finetune-squad-data
     <<: *pretrain-squad-data
     <<: *squad-finetune
-    max_seq_len: 256
   optim: &finetune-squad-optim
     <<: *pretrain-squad-optim
     n_epochs: 30
     batch_size: 96
+    max_seq_len: 256
   misc: &finetune-squad-misc
     <<: *pretrain-squad-misc
     load_model_path:
@@ -137,13 +135,23 @@ finetune_squad: &finetune-squad
     no_graph: False
     wandb_mode: online
 
+# to reproduce t5 results on squad
+finetune_squad_t5:
+  <<: *finetune-squad
+  optim:
+    <<: *finetune-squad-optim
+    freeze_lm: False
+    freeze_non_lm: True
+    optimizer: adafactor
+    learning_rate: 0.0001
+
 finetune_squad_no_graph:
   <<: *pretrain-squad-no-graph
   data:
     <<: *pretrain-squad-data
-    max_seq_len: 64
   optim:
     <<: *pretrain-squad-optim
+    max_seq_len: 64
     batch_size: 128
     n_epochs: 60
   misc:
@@ -155,9 +163,9 @@ finetune_squad_retrieval:
   <<: *finetune-squad
   data:
     <<: *finetune-squad-data
-    max_seq_len: 512
   optim:
     <<: *finetune-squad-optim
+    max_seq_len: 512
     n_epochs: 30
     batch_size: 48
   misc:

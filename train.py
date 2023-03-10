@@ -56,7 +56,7 @@ def main(args):
 
     # 4. Create pytorch lightning model
     model = LitT5Seq2Seq(args=args,encoder=encoder, decoder=decoder,
-                         freeze_encoder=True, freeze_decoder=True,
+                         freeze_lm=args.freeze_lm, freeze_non_lm=args.freeze_non_lm,
                          do_validation=(mode=='finetune'))
 
     # 5. Create trainer
