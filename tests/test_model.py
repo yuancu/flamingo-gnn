@@ -2,14 +2,18 @@ import pickle
 
 import pytest
 import torch
+from torch.utils.data import DataLoader
 from transformers.optimization import Adafactor
+from pytorch_lightning import Trainer
 
 from dataset.lmgnn import load_data
+from lightning.lit_seq2seq import LitT5Seq2Seq
 from models.flamingo_t5 import FlamingoConfig, FlamingoT5Decoder
 from models.t5_lmgnn import T5GNNConfig, T5GNNEncoder
 from models.t5_seq2seq import T5Seq2Seq
 from utils.common import load_args
 from utils.model_utils import get_tweaked_num_relations
+
 
 DUMMY_BATCH_PATH = 'tests/dummy_batch.pkl'
 
@@ -23,7 +27,7 @@ def args():
 
 @pytest.fixture
 def encoder(args):
-    # a dummy node embedding of 1000 nodes, with dim=512 each 
+    # a dummy node embedding of 1000 nodes, with dim=512 each
     node_emb = torch.randn((1000, 512))
     config = T5GNNConfig(
         encoder_name_or_path=args.encoder_name_or_path,
@@ -125,3 +129,25 @@ def test_backward(dummy_batch, model):
     loss = outputs.loss
     loss.backward()
     optimizer.step()
+
+
+def test_lightning(args, dummy_batch, encoder, decoder):
+    class DummyLoader(DataLoader):
+        def __init__(self):
+            self.num_workers=0
+            self.collate_fn=None
+            self.persistent_workers=0
+        def __len__(self):
+            return 1
+        def _get_iterator(self):
+            return iter([dummy_batch])
+    dummy_loader = DummyLoader()
+    model = LitT5Seq2Seq(
+        args=args,
+        encoder=encoder,
+        decoder=decoder,
+        freeze_lm=False,
+        freeze_non_lm=False,
+        do_validation=False)
+    trainer = Trainer(fast_dev_run=True)
+    trainer.fit(model, train_dataloaders=dummy_loader)
