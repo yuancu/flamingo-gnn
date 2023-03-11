@@ -1,0 +1,12 @@
+absl-py
+einops
+einops-exts
+evaluate
+numpy
+pytest
+pytorch-lightning
+pyyaml
+rouge_score
+torch
+tqdm
+transformers
