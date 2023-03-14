@@ -13,6 +13,8 @@ default: &default
     max_node_num: 200  # Max number of nodes / the threshold used to prune nodes.
     num_dataloader_workers: 8
     mlm_probability: 0.2
+    encoder_input: contextualized_question
+    decoder_label: answer
   optim: &optim-default
     # Optimization
     loss: cross_entropy  # model type
@@ -39,9 +41,7 @@ default: &default
     mode: train  # run training or evaluation
     save_dir: ./saved_models/  # model output directory
     save_model: 2  # 0: do not save model checkpoints. 1: save if best dev. 2: save always
-    load_model_path: None  # The model checkpoint to load in the evaluation mode.
-    resume_checkpoint: None  # The checkpoint to resume training from.
-    data_loader_one_process_at_a_time: False
+    checkpoint_path: None  # The checkpoint to resume training from.
     # added
     wandb_mode: offline # online, offline or disabled
     wandb_project: flamingo-gnn
@@ -53,6 +53,7 @@ default: &default
     log_dir: logs
     retrieve_text: False
 
+# Data
 
 wikidata5m: &wikidata5m
   kg: wikidata5m
@@ -85,6 +86,19 @@ squad_finetune: &squad-finetune
   dev_statements: data/squad/statement/ft.validation.statement.jsonl
   dev_adj: data/squad/adj/ft_validation
   legacy_adj: False
+
+mintaka_finetune: &mintaka-finetune
+  dataset: mintaka
+  train_statements: data/mintaka/statement/train.statement.jsonl
+  train_adj: data/mintaka/adj/train
+  dev_statements: data/mintaka/statement/validation.statement.jsonl
+  dev_adj: data/mintaka/adj/validation
+  test_statements: data/mintaka/statement/test.statement.jsonl
+  test_adj: data/mintaka/adj/test
+  legacy_adj: False
+
+
+# Specific Configs
 
 # TODO: Config the text data loader to load context or question conditionally
 pretrain_squad: &pretrain-squad
@@ -122,6 +136,7 @@ finetune_squad: &finetune-squad
   data: &finetune-squad-data
     <<: *pretrain-squad-data
     <<: *squad-finetune
+    max_node_num: 10
   optim: &finetune-squad-optim
     <<: *pretrain-squad-optim
     n_epochs: 30
@@ -173,3 +188,31 @@ finetune_squad_retrieval:
   misc:
     <<: *finetune-squad-misc
     retrieve_text: True
+
+
+finetune_mintaka:
+  <<: *default
+  model:
+    <<: *model-default
+    k: 12
+  data:
+    <<: *data-default
+    <<: *wikidata5m
+    <<: *mintaka-finetune
+    max_node_num: 10
+    encoder_input: question
+    decoder_label: answer
+    num_dataloader_workers: 12
+  optim:
+    <<: *optim-default
+    max_seq_len: 128
+    n_epochs: 100
+    batch_size: 128
+    eval_batch_size: 128
+    freeze_lm: True
+    freeze_non_lm: False
+    learning_rate: 0.00001
+  misc:
+    <<: *finetune-squad-misc
+    retrieve_text: False
+    fast_dev_run: False

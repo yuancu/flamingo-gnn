@@ -32,8 +32,8 @@ def main(args):
         dummy_graph = True
     else:
         dummy_graph = False
-    train_kwargs={'encoder_input': 'contextualized_question', 'decoder_label': 'answer'}
-    val_kwargs={'encoder_input': 'contextualized_question', 'decoder_label': 'raw_answers'}
+    train_kwargs={'encoder_input': args.encoder_input, 'decoder_label': args.decoder_label}
+    val_kwargs={'encoder_input': args.encoder_input, 'decoder_label': 'raw_answers'}
     train_loader, val_loader = load_data(
         args,
         corrupt=False,
@@ -47,7 +47,7 @@ def main(args):
     # TODO: add a config file for flamingo
     decoder_config = FlamingoConfig(
         d_model=encoder.config.d_model,
-        dim_media=100,
+        dim_media=args.gnn_dim,
         xattn_dim_head=64,
         xattn_heads=8,
         xattn_every=1,

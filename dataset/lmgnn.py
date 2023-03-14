@@ -313,7 +313,7 @@ class LMGNNDataset(Dataset):
         if self.encoder_input == 'context':
             encoder_input = context
         elif self.encoder_input == 'question':
-            encoder_input = question
+            encoder_input = 'question: ' + question
         elif self.encoder_input == 'contextualized_question':
             encoder_input = 'question: ' + question + ' context: ' + context
         elif self.encoder_input == 'context_prefix':
