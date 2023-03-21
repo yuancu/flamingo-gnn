@@ -59,7 +59,7 @@ wikidata5m: &wikidata5m
   kg: wikidata5m
   num_relations: 828  # number of relations for wikidata5m
   ent_emb_paths: data/wikidata5m/entity_embeddings.npy
-  kg_vocab_path: data/wikidata5m/graphvite-transe-wikidata5m.pkl
+  kg_vocab_path: data/wikidata5m/graphvite-complex-wikidata5m.pkl
 
 squad2_pretrain: &squad2-pretrain
   dataset: squad2
@@ -97,6 +97,23 @@ mintaka_finetune: &mintaka-finetune
   test_adj: data/mintaka/adj/test
   legacy_adj: False
 
+wiki_pretrain: &wiki-pretrain
+  dataset: wiki
+  train_statements: data/kilt/statement/train.statement.jsonl
+  train_adj: data/kilt/adj_data/train
+  dev_statements: data/kilt/statement/dev.statement.jsonl
+  dev_adj: data/kilt/adj_data/dev
+  test_statements: data/kilt/statement/test.statement.jsonl
+  test_adj: data/kilt/adj_data/test
+  legacy_adj: False
+
+wikitop_pretrain: &wikitop-pretrain
+  dataset: wikitop
+  train_statements: data/wikitop/statement/train.statement.jsonl
+  train_adj: data/wikitop/adj_data/train
+  dev_statements: data/wikitop/statement/test.statement.jsonl
+  dev_adj: data/wikitop/adj_data/test
+  legacy_adj: False
 
 # Specific Configs
 
@@ -190,11 +207,13 @@ finetune_squad_retrieval:
     retrieve_text: True
 
 
-finetune_mintaka:
+finetune_mintaka: &finetune-mintaka
   <<: *default
   model:
     <<: *model-default
-    k: 12
+    k: 8
+    gnn_dim: 256
+    ie_dim: 256
   data:
     <<: *data-default
     <<: *wikidata5m
@@ -205,14 +224,66 @@ finetune_mintaka:
     num_dataloader_workers: 12
   optim:
     <<: *optim-default
-    max_seq_len: 128
+    max_seq_len: 64
     n_epochs: 100
-    batch_size: 128
-    eval_batch_size: 128
+    batch_size: 144
+    eval_batch_size: 144
     freeze_lm: True
     freeze_non_lm: False
     learning_rate: 0.00001
-  misc:
-    <<: *finetune-squad-misc
+  misc: 
+    <<: *misc-default
+    wandb_mode: online
     retrieve_text: False
     fast_dev_run: False
+
+
+finetune_mintaka_no_graph:
+  <<: *finetune-mintaka
+  misc:
+    <<: *misc-default
+    wandb_mode: online
+    no_graph: True
+
+pretrain_wiki:
+  <<: *default
+  data:
+    <<: *data-default
+    <<: *wikidata5m
+    <<: *wiki-pretrain 
+    encoder_input: context_prefix
+    decoder_label: context_suffix
+    max_node_num: 30
+  optim:
+    <<: *optim-default
+    max_seq_len: 512
+    batch_size: 24
+    freeze_lm: True
+    freeze_non_lm: False
+  misc:
+    <<: *misc-default
+    fast_dev_run: False
+
+pretrain_wikitop:
+  <<: *default
+  model:
+    <<: *model-default
+    k: 8
+    gnn_dim: 256
+    ie_dim: 256
+  data:
+    <<: *data-default
+    <<: *wikidata5m
+    <<: *wikitop-pretrain
+    encoder_input: context_prefix
+    decoder_label: context_suffix
+    max_node_num: 30
+  optim:
+    <<: *optim-default
+    max_seq_len: 512
+    batch_size: 24
+    freeze_lm: True
+    freeze_non_lm: False
+  misc:
+    <<: *misc-default
+    fast_dev_run: True

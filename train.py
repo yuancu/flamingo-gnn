@@ -33,7 +33,11 @@ def main(args):
     else:
         dummy_graph = False
     train_kwargs={'encoder_input': args.encoder_input, 'decoder_label': args.decoder_label}
-    val_kwargs={'encoder_input': args.encoder_input, 'decoder_label': 'raw_answers'}
+    if mode == 'pretrain':
+        val_decoder_label = args.decoder_label
+    else:
+        val_decoder_label = 'raw_answers'
+    val_kwargs={'encoder_input': args.encoder_input, 'decoder_label': val_decoder_label}
     train_loader, val_loader = load_data(
         args,
         corrupt=False,
@@ -75,7 +79,8 @@ def main(args):
     trainer = pl.Trainer(max_epochs=args.n_epochs, fast_dev_run=args.fast_dev_run,
                          default_root_dir=os.path.join(args.save_dir, args.run_name),
                          accelerator='gpu', devices=1, logger=wandb_logger,
-                         callbacks=[checkpoint_callback])
+                         callbacks=[checkpoint_callback], gradient_clip_val=0.5,
+                         accumulate_grad_batches=8)
 
     # 6. Train
     if hasattr(args, 'resume_ckpt') and args.resume_ckpt:
@@ -89,6 +94,7 @@ def main(args):
 if __name__ == '__main__':
     # To properly utilize a CUDA device with tensor cores
     torch.set_float32_matmul_precision('medium')
+    torch.backends.cudnn.benchmark = True
 
     # Parse arguments
     parser = ArgumentParser()

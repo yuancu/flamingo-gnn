@@ -45,7 +45,7 @@ class LMGNNDataset(Dataset):
     def __init__(self, statement_path, num_relations, adj_path, max_seq_length=256,
                  model_name='t5-base', max_node_num=200, cxt_node_connects_all=True,
                  kg_only_use_qa_nodes=False, truncation_side='right',
-                 encoder_input='question', decoder_label='answer', prefix_ratio=0.5):
+                 encoder_input='question', decoder_label='answer', prefix_ratio=0.2):
         """
         Valid pairs of encoder_input and decoder_label:
         - Pretraining (Denoise): encoder_input = 'context', decoder_label = 'context'
@@ -64,7 +64,8 @@ class LMGNNDataset(Dataset):
         assert decoder_label  in ['answer', 'context', 'context_suffix', 'raw_answers']
         if encoder_input == 'context_prefix' or decoder_label == 'context_suffix':
             assert encoder_input == 'context_prefix' and decoder_label == 'context_suffix', \
-                "'context_prefix' and 'context_suffix' must be used together'"
+                "'context_prefix' and 'context_suffix' must be used together, " \
+                f"got {encoder_input} and {decoder_label}"
         assert os.path.isdir(adj_path), "adj_path should be a folder in non-legacy mode"
         super(Dataset).__init__()
         # For text data
@@ -305,7 +306,6 @@ class LMGNNDataset(Dataset):
         question = example.question
         answers = example.endings
         assert isinstance(answers, list), "Currently answers must be a list of strings"
-        answer = answers[0]
         # Here we separately encode the question and answer
         # Warning: we assume the encoder and the decoder share the same tokenizer
         # but this is not necessarily true!
@@ -319,7 +319,7 @@ class LMGNNDataset(Dataset):
         elif self.encoder_input == 'context_prefix':
             context_splited = context.split()
             prefix_length = math.floor(len(context_splited) * self.prefix_ratio)
-            encoder_input = " ".join(context_splited[:prefix_length])
+            encoder_input = "complete: " +  " ".join(context_splited[:prefix_length])
         else: # self.encoder_input == 'retrieval_augmented_question':
             raise NotImplementedError(f"Encoder input {self.encoder_input} is not implemented")
             # TODO: integrate retrieval
@@ -340,6 +340,7 @@ class LMGNNDataset(Dataset):
             if self.decoder_label == 'context':
                 decoder_input = context
             elif self.decoder_label == 'answer':
+                answer = answers[0]
                 decoder_input = answer
             elif self.decoder_label == 'context_suffix':
                 # As context_prefix and context_suffix are always used together, we should
@@ -539,6 +540,7 @@ def create_dummy_graph(batch_size):
     node_type_ids = node_type_ids.squeeze(1)
     adj_lengths = adj_lengths.squeeze(1)
     edge_index = sum(edge_index,[])
+    edge_type = sum(edge_type,[])
     return node_ids, node_type_ids, adj_lengths, edge_index, edge_type
 
 
