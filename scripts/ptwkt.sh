@@ -22,7 +22,6 @@ source ~/miniconda3/bin/activate dragon
 python -c "import torch; print('device_count:', torch.cuda.device_count())"
 python -c "import torch_geometric; print('torch_geometric version:', torch_geometric.__version__)"
 
-export BACKBONE_MODEL=t5
 export TOKENIZERS_PARALLELISM=true
 
 # run pretrain

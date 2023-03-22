@@ -280,10 +280,10 @@ pretrain_wikitop:
     max_node_num: 30
   optim:
     <<: *optim-default
-    max_seq_len: 512
-    batch_size: 24
+    max_seq_len: 312
+    batch_size: 28
     freeze_lm: True
     freeze_non_lm: False
   misc:
     <<: *misc-default
-    fast_dev_run: True
+    fast_dev_run: False

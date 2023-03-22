@@ -75,11 +75,15 @@ def main(args):
     wandb_logger = WandbLogger(project=args.wandb_project, offline=offline, name=run_name,
                                group=config_profile, save_dir=args.log_dir)
     wandb_logger.experiment.config.update(vars(args))
-    checkpoint_callback = ModelCheckpoint(monitor="em", mode="max", save_weights_only=True,)
+    if mode == 'finetune':
+        checkpoint_callback = ModelCheckpoint(monitor="em", mode="max", save_weights_only=True,)
+        callbacks = [checkpoint_callback]
+    else:
+        callbacks = None
     trainer = pl.Trainer(max_epochs=args.n_epochs, fast_dev_run=args.fast_dev_run,
                          default_root_dir=os.path.join(args.save_dir, args.run_name),
-                         accelerator='gpu', devices=1, logger=wandb_logger,
-                         callbacks=[checkpoint_callback], gradient_clip_val=0.5,
+                         accelerator='gpu', logger=wandb_logger,
+                         callbacks=callbacks, gradient_clip_val=0.5,
                          accumulate_grad_batches=8)
 
     # 6. Train

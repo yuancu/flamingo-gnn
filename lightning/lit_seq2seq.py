@@ -9,12 +9,10 @@ from models.t5_seq2seq import T5Seq2Seq
 from evaluation.squad import compute_score
 
 
-def create_evaluator():
-    """It returns a evaluate function that computes rouge and exact match scores."""
-    def evaluate(predictions, references):
-        score = compute_score(predictions, references)
-        return score
-    return evaluate
+
+def evaluate(predictions, references):
+    score = compute_score(predictions, references)
+    return score
 
 
 class LitT5Seq2Seq(pl.LightningModule):
@@ -45,7 +43,7 @@ class LitT5Seq2Seq(pl.LightningModule):
         # The tokenizer is used in the validation step
         tokenizer = AutoTokenizer.from_pretrained(args.encoder_name_or_path)
         self.tokenizer = tokenizer
-        self.evaluator = create_evaluator()
+        self.evaluator = evaluate
         # The current setting only allows validation in downstream tasks
         self.do_validation = do_validation
         self.return_val_predictions = return_val_predictions
