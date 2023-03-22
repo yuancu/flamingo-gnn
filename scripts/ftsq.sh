@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Finetune on SQuAD
 #
-#SBATCH --job-name ptsq
-#SBATCH --output=R-%x.%j.out
+#SBATCH --job-name ftsq
+#SBATCH --output=runs/R-%x.%j.out
 #SBATCH --ntasks=1
 #SBATCH --time=24:00:00
 #SBATCH --gres=gpu:1
@@ -25,4 +25,4 @@ python -c "import torch_geometric; print('torch_geometric version:', torch_geome
 export TOKENIZERS_PARALLELISM=true
 
 # run pretrain
-python -u train.py --finetune --config configs/lmgnn.yaml --config-profile finetune_squad --run-name ftsq
+python train.py --finetune --config configs/lmgnn.yaml --config-profile finetune_squad --run-name ftsq

@@ -95,6 +95,8 @@ if __name__ == '__main__':
     # To properly utilize a CUDA device with tensor cores
     torch.set_float32_matmul_precision('medium')
     torch.backends.cudnn.benchmark = True
+    # To avoid 'too many open files' error
+    torch.multiprocessing.set_sharing_strategy('file_system')
 
     # Parse arguments
     parser = ArgumentParser()

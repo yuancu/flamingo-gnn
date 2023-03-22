@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Finetune T5 on SQuAD
 #
-#SBATCH --job-name ptsqt5
-#SBATCH --output=R-%x.%j.out
+#SBATCH --job-name ftsqt5
+#SBATCH --output=runs/R-%x.%j.out
 #SBATCH --ntasks=1
 #SBATCH --time=24:00:00
 #SBATCH --gres=gpu:1

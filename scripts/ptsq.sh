@@ -2,7 +2,7 @@
 # Pretrain on SQuAD Context
 #
 #SBATCH --job-name ptsq
-#SBATCH --output=R-%x.%j.out
+#SBATCH --output=runs/R-%x.%j.out
 #SBATCH --ntasks=1
 #SBATCH --time=24:00:00
 #SBATCH --gres=gpu:1
@@ -22,8 +22,7 @@ source ~/miniconda3/bin/activate dragon
 python -c "import torch; print('device_count:', torch.cuda.device_count())"
 python -c "import torch_geometric; print('torch_geometric version:', torch_geometric.__version__)"
 
-export BACKBONE_MODEL=t5
 export TOKENIZERS_PARALLELISM=true
 
 # run pretrain
-python -u pretrain.py --pretrain --config configs/lmgnn.yaml --config-profile pretrain_squad --run-name ptsq
+python train.py --finetune --config configs/lmgnn.yaml --config-profile pretrain_squad --run-name ptsq

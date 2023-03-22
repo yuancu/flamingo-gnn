@@ -156,7 +156,7 @@ finetune_squad: &finetune-squad
     max_node_num: 10
   optim: &finetune-squad-optim
     <<: *pretrain-squad-optim
-    n_epochs: 30
+    n_epochs: 100
     batch_size: 96
     max_seq_len: 256
   misc: &finetune-squad-misc
@@ -165,7 +165,7 @@ finetune_squad: &finetune-squad
     fast_dev_run: False
     resume_ckpt:
     no_graph: False
-    wandb_mode: online
+    wandb_mode: offline
 
 # to reproduce t5 results on squad
 finetune_squad_t5:
