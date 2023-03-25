@@ -53,6 +53,7 @@ class T5GNNEncoder(PreTrainedModel):
 
         # T5GNN
         self.t5gnn_activation = nn.GELU()
+        # the pretrained node embedding is kept on the CPU with this customized embedding layer
         self.node_emb = CustomizedEmbedding(node_num=config.num_entity, node_out_dim=config.gnn_dim,
                                             use_contextualized=False, node_in_dim=config.node_in_dim,
                                             pretrained_node_emb=pretrained_node_emb,
