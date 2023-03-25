@@ -149,4 +149,6 @@ class LitT5Seq2Seq(pl.LightningModule):
         return optimizer
 
     def on_save_checkpoint(self, checkpoint):
-        del checkpoint['state_dict']['model.encoder.node_emb.emb.weight']
+        # After moving the embedding to the CPU, this weight should no longer exist
+        if 'model.encoder.node_emb.emb.weight' in checkpoint['state_dict']:
+            del checkpoint['state_dict']['model.encoder.node_emb.emb.weight']
