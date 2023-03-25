@@ -41,7 +41,7 @@ default: &default
     mode: train  # run training or evaluation
     save_dir: ./saved_models/  # model output directory
     save_model: 2  # 0: do not save model checkpoints. 1: save if best dev. 2: save always
-    checkpoint_path: None  # The checkpoint for finetuning, or to resume training from if restore_training is set
+    checkpoint_path:  # The checkpoint for finetuning, or to resume training from if restore_training is set
     restore_training: False  # Whether to restore training from the checkpoint
     # added
     wandb_mode: offline # online, offline or disabled
@@ -311,7 +311,7 @@ finetune_mcwq: &finetune-mcwq
   optim:
     <<: *optim-default
     max_seq_len: 64
-    batch_size: 160
+    batch_size: 192
     eval_batch_size: 128
     freeze_lm: True
     freeze_non_lm: False

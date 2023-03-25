@@ -165,6 +165,7 @@ class LMGNNDataset(Dataset):
         # am: np.array(num_nodes, ), where entry is True/False
         adj, nodes, qmask, amask = graph[:4]
         assert len(nodes) == len(set(nodes))
+        assert len(nodes) == len(qmask), "The number of nodes should be the same as the number of qmask"
 
         qamask = qmask | amask
         # Sanity check: should be T,..,T,F,F,..F
@@ -186,7 +187,6 @@ class LMGNNDataset(Dataset):
             actual_max_node_num = torch.tensor(qamask).long().sum().item()
         else:
             actual_max_node_num = self.max_node_num
-
         num_node = min(len(nodes) + n_special_nodes, actual_max_node_num) # this is the final number of nodes including contextnode but excluding PAD
         adj_lengths_ori = torch.tensor(len(nodes))
         adj_length = torch.tensor(num_node)
