@@ -41,7 +41,8 @@ default: &default
     mode: train  # run training or evaluation
     save_dir: ./saved_models/  # model output directory
     save_model: 2  # 0: do not save model checkpoints. 1: save if best dev. 2: save always
-    checkpoint_path: None  # The checkpoint to resume training from.
+    checkpoint_path: None  # The checkpoint for finetuning, or to resume training from if restore_training is set
+    restore_training: False  # Whether to restore training from the checkpoint
     # added
     wandb_mode: offline # online, offline or disabled
     wandb_project: flamingo-gnn
@@ -87,34 +88,6 @@ squad_finetune: &squad-finetune
   dev_adj: data/squad/adj/ft_validation
   legacy_adj: False
 
-mintaka_finetune: &mintaka-finetune
-  dataset: mintaka
-  train_statements: data/mintaka/statement/train.statement.jsonl
-  train_adj: data/mintaka/adj/train
-  dev_statements: data/mintaka/statement/validation.statement.jsonl
-  dev_adj: data/mintaka/adj/validation
-  test_statements: data/mintaka/statement/test.statement.jsonl
-  test_adj: data/mintaka/adj/test
-  legacy_adj: False
-
-wiki_pretrain: &wiki-pretrain
-  dataset: wiki
-  train_statements: data/kilt/statement/train.statement.jsonl
-  train_adj: data/kilt/adj_data/train
-  dev_statements: data/kilt/statement/dev.statement.jsonl
-  dev_adj: data/kilt/adj_data/dev
-  test_statements: data/kilt/statement/test.statement.jsonl
-  test_adj: data/kilt/adj_data/test
-  legacy_adj: False
-
-wikitop_pretrain: &wikitop-pretrain
-  dataset: wikitop
-  train_statements: data/wikitop/statement/train.statement.jsonl
-  train_adj: data/wikitop/adj_data/train
-  dev_statements: data/wikitop/statement/test.statement.jsonl
-  dev_adj: data/wikitop/adj_data/test
-  legacy_adj: False
-
 # Specific Configs
 
 # TODO: Config the text data loader to load context or question conditionally
@@ -136,7 +109,6 @@ pretrain_squad: &pretrain-squad
     fast_dev_run: False
     log_interval: 20
 
-
 pretrain_squad_no_graph: &pretrain-squad-no-graph
   <<: *pretrain-squad
   misc: &pretrain-squad-no-graph-misc
@@ -146,7 +118,6 @@ pretrain_squad_no_graph: &pretrain-squad-no-graph
   optim:
     <<: *pretrain-squad-optim
     batch_size: 32
-
 
 finetune_squad: &finetune-squad
   <<: *pretrain-squad
@@ -163,7 +134,6 @@ finetune_squad: &finetune-squad
     <<: *pretrain-squad-misc
     load_model_path:
     fast_dev_run: False
-    resume_ckpt:
     no_graph: False
     wandb_mode: offline
 
@@ -206,6 +176,16 @@ finetune_squad_retrieval:
     <<: *finetune-squad-misc
     retrieve_text: True
 
+# Mintaka Dataset for fine-tuning
+mintaka_finetune: &mintaka-finetune
+  dataset: mintaka
+  train_statements: data/mintaka/statement/train.statement.jsonl
+  train_adj: data/mintaka/adj/train
+  dev_statements: data/mintaka/statement/validation.statement.jsonl
+  dev_adj: data/mintaka/adj/validation
+  test_statements: data/mintaka/statement/test.statement.jsonl
+  test_adj: data/mintaka/adj/test
+  legacy_adj: False
 
 finetune_mintaka: &finetune-mintaka
   <<: *default
@@ -237,13 +217,31 @@ finetune_mintaka: &finetune-mintaka
     retrieve_text: False
     fast_dev_run: False
 
-
 finetune_mintaka_no_graph:
   <<: *finetune-mintaka
   misc:
     <<: *misc-default
     wandb_mode: online
     no_graph: True
+
+# Wikidataset for pretrain (made from the cross links on Wikipedia)
+wiki_pretrain: &wiki-pretrain
+  dataset: wiki
+  train_statements: data/kilt/statement/train.statement.jsonl
+  train_adj: data/kilt/adj_data/train
+  dev_statements: data/kilt/statement/dev.statement.jsonl
+  dev_adj: data/kilt/adj_data/dev
+  test_statements: data/kilt/statement/test.statement.jsonl
+  test_adj: data/kilt/adj_data/test
+  legacy_adj: False
+
+wikitop_pretrain: &wikitop-pretrain
+  dataset: wikitop
+  train_statements: data/wikitop/statement/train.statement.jsonl
+  train_adj: data/wikitop/adj_data/train
+  dev_statements: data/wikitop/statement/test.statement.jsonl
+  dev_adj: data/wikitop/adj_data/test
+  legacy_adj: False
 
 pretrain_wiki:
   <<: *default
@@ -264,14 +262,14 @@ pretrain_wiki:
     <<: *misc-default
     fast_dev_run: False
 
-pretrain_wikitop:
+pretrain_wikitop: &pretrain-wikitop
   <<: *default
-  model:
+  model: &pretrain-wikitop-model
     <<: *model-default
     k: 8
     gnn_dim: 256
     ie_dim: 256
-  data:
+  data: &pretrain-wikitop-data
     <<: *data-default
     <<: *wikidata5m
     <<: *wikitop-pretrain
@@ -281,9 +279,50 @@ pretrain_wikitop:
   optim:
     <<: *optim-default
     max_seq_len: 312
-    batch_size: 28
+    batch_size: 32
     freeze_lm: True
     freeze_non_lm: False
+    n_epochs: 30
+    learning_rate: 0.0005
   misc:
     <<: *misc-default
     fast_dev_run: False
+
+# MCWQ Dataset
+mcwq_fintune: &mcwq-finetune
+  dataset: mcwq
+  train_statements: data/mcwq/statement/train.statement.jsonl
+  train_adj: data/mcwq/adj/train
+  dev_statements: data/mcwq/statement/dev.statement.jsonl
+  dev_adj: data/mcwq/adj/dev
+  test_statements: data/mcwq/statement/test.statement.jsonl
+  test_adj: data/mcwq/adj/test
+  legacy_adj: False
+
+finetune_mcwq: &finetune-mcwq
+  <<: *default
+  model:
+    <<: *pretrain-wikitop-model
+  data:
+    <<: *pretrain-wikitop-data
+    <<: *mcwq-finetune
+    encoder_input: question
+    decoder_label: answer
+  optim:
+    <<: *optim-default
+    max_seq_len: 64
+    batch_size: 160
+    eval_batch_size: 128
+    freeze_lm: True
+    freeze_non_lm: False
+    learning_rate: 0.00001
+    n_epochs: 100
+  misc:
+    <<: *misc-default
+    checkpoint_path: logs/flamingo-gnn/6imyuuzm/checkpoints/epoch=24-step=16175.ckpt
+
+finetune_mcwq_no_graph:
+  <<: *finetune-mcwq
+  misc:
+    <<: *misc-default
+    no_graph: True

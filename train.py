@@ -18,6 +18,14 @@ from utils.model_utils import construct_encoder
 
 
 def main(args):
+    # 0. Set seed
+    # Setting all the random seeds to the same value.
+    # This is important in a distributed training setting. 
+    # Each rank will get its own set of initial weights. 
+    # If they don't match up, the gradients will not match either,
+    # leading to training that may not converge.
+    pl.seed_everything(1)
+
     # 1. Load configs
     run_name = args.run_name
     mode = 'pretrain' if args.pretrain else 'finetune'
@@ -60,9 +68,18 @@ def main(args):
     decoder = FlamingoT5Decoder(decoder_config, encoder.get_input_embeddings())
 
     # 4. Create pytorch lightning model
-    model = LitT5Seq2Seq(args=args,encoder=encoder, decoder=decoder,
-                         freeze_lm=args.freeze_lm, freeze_non_lm=args.freeze_non_lm,
-                         do_validation=(mode=='finetune'))
+    if args.checkpoint_path and not args.restore_training: # if restore, we don't need to load the checkpoint here
+        model = LitT5Seq2Seq.load_from_checkpoint(
+            args.checkpoint_path, strict=False,
+            args=args, encoder=encoder, decoder=decoder,
+            freeze_lm=args.freeze_lm, freeze_non_lm=args.freeze_non_lm,
+            do_validation=(mode=='finetune')
+        )
+    else:
+        model = LitT5Seq2Seq(
+            args=args,encoder=encoder, decoder=decoder,
+            freeze_lm=args.freeze_lm, freeze_non_lm=args.freeze_non_lm,
+            do_validation=(mode=='finetune'))
 
     # 5. Create trainer
     now = datetime.now().strftime('%d%H%M')
@@ -87,12 +104,13 @@ def main(args):
                          accumulate_grad_batches=8)
 
     # 6. Train
-    if hasattr(args, 'resume_ckpt') and args.resume_ckpt:
-        resume_ckpt = args.resume_ckpt
+    if args.restore_training:
+        resume_checkpoint = args.checkpoint_path
+        assert resume_checkpoint, "No checkpoint to resume training. (got {resume_checkpoint})"
     else:
-        resume_ckpt = None
+        resume_checkpoint = None
     trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=val_loader,
-                ckpt_path=resume_ckpt)
+                ckpt_path=resume_checkpoint)
 
 
 if __name__ == '__main__':
