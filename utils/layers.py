@@ -8,20 +8,22 @@ import torch.nn as nn
 
 
 class CustomizedEmbedding(nn.Module):
+    """This embedding layer keeps the embedding on CPU"""
     def __init__(self, node_num, node_in_dim, node_out_dim, use_contextualized=False,
                  pretrained_node_emb=None, freeze_ent_emb=True, scale=1.0, init_range=0.02):
         super().__init__()
         self.scale = scale
         self.use_contextualized = use_contextualized
         if not use_contextualized:
-            self.emb = nn.Embedding(node_num + 2, node_in_dim)
+            # Wrapping embedding with brackets makes the model not aware of the layer
+            self.emb = [nn.Embedding(node_num + 2, node_in_dim)]
             if pretrained_node_emb is not None:
-                self.emb.weight.data.fill_(0)
-                self.emb.weight.data[:node_num].copy_(pretrained_node_emb)
+                self.emb[0].weight.data.fill_(1)
+                self.emb[0].weight.data[:node_num].copy_(pretrained_node_emb)
             else:
-                self.emb.weight.data.normal_(mean=0.0, std=init_range)
+                self.emb[0].weight.data.normal_(mean=0.0, std=init_range)
             if freeze_ent_emb:
-                for p in self.emb.parameters():
+                for p in self.emb[0].parameters():
                     p.requires_grad = False
 
         if node_in_dim != node_out_dim:
@@ -43,9 +45,9 @@ class CustomizedEmbedding(nn.Module):
             return contextualized_emb.gather(1, index.unsqueeze(-1).expand(-1, -1, emb_dim))
         else:
             if hasattr(self, 'cpt_transform'):
-                return self.activation(self.cpt_transform(self.emb(index) * self.scale))
+                return self.activation(self.cpt_transform(self.emb[0](index.cpu()).to(index.device) * self.scale))
             else:
-                return self.emb(index) * self.scale
+                return self.emb[0](index.cpu()).to(index.device) * self.scale
 
 
 class MLP(nn.Module):
