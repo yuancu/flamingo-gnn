@@ -326,3 +326,10 @@ finetune_mcwq_no_graph:
   misc:
     <<: *misc-default
     no_graph: True
+
+finetune_mcwq_no_graph_pretrained:
+  <<: *finetune-mcwq
+  misc:
+    <<: *misc-default
+    checkpoint_path: logs/flamingo-gnn/6imyuuzm/checkpoints/epoch=24-step=16175.ckpt
+    no_graph: True
