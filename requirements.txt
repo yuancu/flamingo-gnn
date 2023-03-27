@@ -1,4 +1,5 @@
 absl-py
+click
 einops
 einops-exts
 evaluate
