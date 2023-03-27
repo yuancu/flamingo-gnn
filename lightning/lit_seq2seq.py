@@ -23,6 +23,7 @@ class LitT5Seq2Seq(pl.LightningModule):
         tokenizer constructed from args.encoder_name_or_path tokenizer.
         """
         super().__init__()
+        self.validation_step_outputs = []
         self.save_hyperparameters(args)
         self.args = args
         # Freeze node embedding (duplicated but important)
@@ -104,11 +105,13 @@ class LitT5Seq2Seq(pl.LightningModule):
                 "references": gold_answers,
                 **scores
             }
+        self.validation_step_outputs.append(scores)
         return scores
 
-    def validation_epoch_end(self, outputs):
+    def on_validation_epoch_end(self):
         if not self.do_validation:
             return {}
+        outputs = self.validation_step_outputs
         if len(outputs) > 0:
             mean_keys = outputs[0].keys()
             mean_keys = set(mean_keys) - set(["predictions", "references"])
@@ -121,6 +124,7 @@ class LitT5Seq2Seq(pl.LightningModule):
                 scores["references"] = [p for o in outputs for p in o["references"]]
         else:
             scores = {}
+        self.validation_step_outputs.clear()
         return scores
 
     def test_step(self, *args, **kwargs):
