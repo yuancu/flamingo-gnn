@@ -3,12 +3,8 @@ import pickle
 
 import pytest
 import torch
-from torch.utils.data import DataLoader
-from transformers.optimization import Adafactor
-from pytorch_lightning import Trainer
 
 from dataset.lmgnn import load_data
-from lightning.lit_seq2seq import LitT5Seq2Seq
 from models.flamingo_t5 import FlamingoConfig, FlamingoT5Decoder
 from models.t5_lmgnn import T5GNNConfig, T5GNNEncoder
 from models.t5_seq2seq import T5Seq2Seq

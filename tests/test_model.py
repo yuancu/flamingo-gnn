@@ -8,6 +8,7 @@ from lightning.lit_seq2seq import LitT5Seq2Seq
 
 
 def test_forward(dummy_batch, model):
+    """Test model forward pass."""
     (input_ids, attention_mask, decoder_labels,
         node_ids, node_type_ids, adj_lengths,
         edge_index, edge_type) = dummy_batch
@@ -26,6 +27,7 @@ def test_forward(dummy_batch, model):
 
 
 def test_backward(dummy_batch, model):
+    """Test model backward pass."""
     (input_ids, attention_mask, decoder_labels,
         node_ids, node_type_ids, adj_lengths,
         edge_index, edge_type) = dummy_batch
@@ -47,6 +49,7 @@ def test_backward(dummy_batch, model):
 
 
 def test_lightning(args, train_loader, encoder, decoder):
+    """Test lightning model forward pass."""
     model = LitT5Seq2Seq(
         args=args,
         encoder=encoder,

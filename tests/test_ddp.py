@@ -9,6 +9,7 @@ from lightning.lit_seq2seq import LitT5Seq2Seq
 
 
 def test_ddp_and_wandb(args, train_loader, encoder, decoder):
+    """Test DDP training with WandbLogger. Skip if no GPU available."""
     if torch.cuda.device_count() == 0:
         # skip test if no GPU
         pytest.skip('No GPU available for testing DDP')
