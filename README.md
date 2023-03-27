@@ -7,7 +7,7 @@ Therefore, this repository modifies the implementation of the Flamingo, and make
 ## Dependencies
 ```
 pip install -r requirements.txt
-conda with conda install pyg -c pyg
+conda install pyg -c pyg
 ```
 
 ## Architecture
