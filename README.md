@@ -5,9 +5,9 @@ In the original flamingo paper, the image token intertwines with the text token.
 Therefore, this repository modifies the implementation of the Flamingo, and make it suitable for a more general encoder-decoder setting.
 
 ## Dependencies
-```
+```bash
 pip install -r requirements.txt
-conda install pyg -c pyg
+conda install pyg pytorch-scatter -c pyg
 ```
 
 ## Architecture
