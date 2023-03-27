@@ -333,3 +333,14 @@ finetune_mcwq_no_graph_pretrained:
     <<: *misc-default
     checkpoint_path: logs/flamingo-gnn/6imyuuzm/checkpoints/epoch=24-step=16175.ckpt
     no_graph: True
+
+
+debug_ddp:
+  <<: *finetune-mcwq
+  model:
+    <<: *model-default
+    encoder_name_or_path: t5-small
+  misc:
+    <<: *misc-default
+    no_graph: True
+    fast_dev_run: True
