@@ -4,6 +4,7 @@ import torch
 from torch.optim import AdamW, RMSprop
 from transformers import AutoTokenizer
 from transformers.optimization import Adafactor
+from deepspeed.ops.adam import DeepSpeedCPUAdam
 
 from models.t5_seq2seq import T5Seq2Seq
 from evaluation.squad import compute_score
@@ -139,7 +140,9 @@ class LitT5Seq2Seq(pl.LightningModule):
         """
         parameters = self.model.parameters()
         learning_rate = float(self.args.learning_rate)
-        if self.args.optimizer == "adamw":
+        if self.args.optimizer == "deepspeed_offload":
+            optimizer = DeepSpeedCPUAdam(parameters, lr=learning_rate)
+        elif self.args.optimizer == "adamw":
             optimizer = AdamW(parameters, lr=learning_rate)
         elif self.args.optimizer == "adafactor":
             # Set according to https://discuss.huggingface.co/t/t5-finetuning-tips/684/3

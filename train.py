@@ -99,7 +99,7 @@ def main(args):
         callbacks = None
     trainer = pl.Trainer(max_epochs=args.n_epochs, fast_dev_run=args.fast_dev_run,
                          default_root_dir=os.path.join(args.save_dir, args.run_name),
-                         accelerator='gpu', logger=wandb_logger,
+                         accelerator='gpu', strategy=args.strategy, logger=wandb_logger,
                          callbacks=callbacks, gradient_clip_val=0.5,
                          accumulate_grad_batches=8)
 

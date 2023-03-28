@@ -37,6 +37,7 @@ default: &default
     freeze_lm: True
     freeze_non_lm: False
     max_seq_len: 512
+    strategy:
   misc: &misc-default
     mode: train  # run training or evaluation
     save_dir: ./saved_models/  # model output directory
@@ -276,7 +277,7 @@ pretrain_wikitop: &pretrain-wikitop
     encoder_input: context_prefix
     decoder_label: context_suffix
     max_node_num: 30
-  optim:
+  optim: &pretrain-wikitop-optim
     <<: *optim-default
     max_seq_len: 312
     batch_size: 32
@@ -287,6 +288,17 @@ pretrain_wikitop: &pretrain-wikitop
   misc:
     <<: *misc-default
     fast_dev_run: False
+
+pretrain_wikitop_xl: &pretrain-wikitop-xl
+  <<: *pretrain-wikitop
+  model:
+    <<: *pretrain-wikitop-model
+    encoder_name_or_path: google/flan-t5-xl
+  optim:
+    <<: *pretrain-wikitop-optim
+    batch_size: 64
+    strategy: deepspeed_stage_3_offload
+    optimizer: deepspeed_offload
 
 # MCWQ Dataset
 mcwq_fintune: &mcwq-finetune
@@ -315,7 +327,7 @@ finetune_mcwq: &finetune-mcwq
     eval_batch_size: 128
     freeze_lm: True
     freeze_non_lm: False
-    learning_rate: 0.00001
+    learning_rate: 0.00005
     n_epochs: 100
   misc:
     <<: *misc-default
@@ -340,6 +352,9 @@ debug_ddp:
   model:
     <<: *model-default
     encoder_name_or_path: t5-small
+  optim:
+    <<: *optim-default
+    strategy: ddp
   misc:
     <<: *misc-default
     no_graph: True
