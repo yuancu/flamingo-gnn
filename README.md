@@ -5,7 +5,9 @@ In the original flamingo paper, the image token intertwines with the text token.
 Therefore, this repository modifies the implementation of the Flamingo, and make it suitable for a more general encoder-decoder setting.
 
 ## Dependencies
+`deepspeed` does not support gxx later than 10. Installing `gxx_linux-64=9.3.0` in advance avoids reconfiguring the whole environment.
 ```bash
+conda install gxx_linux-64=9.3.0
 pip install -r requirements.txt
 conda install pyg pytorch-scatter -c pyg
 ```
