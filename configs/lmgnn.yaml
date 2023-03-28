@@ -8,6 +8,10 @@ default: &default
     ie_layer_num: 1  # number of hidden layers in the MInt operator
     cxt_node_connects_all: True  # Whether to connect the interaction node to all the retrieved KG nodes or only the linked nodes.
     encoder_name_or_path: t5-base
+    xattn_dim_head: 64
+    xattn_heads: 8
+    xattn_every: 1
+    xattn_ff_mult: 4
   data: &data-default
     kg_only_use_qa_nodes: False
     max_node_num: 200  # Max number of nodes / the threshold used to prune nodes.
@@ -294,9 +298,10 @@ pretrain_wikitop_xl: &pretrain-wikitop-xl
   model:
     <<: *pretrain-wikitop-model
     encoder_name_or_path: google/flan-t5-xl
+    xattn_every: 2
   optim:
     <<: *pretrain-wikitop-optim
-    batch_size: 64
+    batch_size: 32
     strategy: deepspeed_stage_3_offload
     optimizer: deepspeed_offload
 

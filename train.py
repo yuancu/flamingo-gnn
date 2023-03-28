@@ -60,10 +60,10 @@ def main(args):
     decoder_config = FlamingoConfig(
         d_model=encoder.config.d_model,
         dim_media=args.gnn_dim,
-        xattn_dim_head=64,
-        xattn_heads=8,
-        xattn_every=1,
-        xattn_ff_mult=4,
+        xattn_dim_head=args.xattn_dim_head,
+        xattn_heads=args.xattn_heads,
+        xattn_every=args.xattn_every,
+        xattn_ff_mult=args.xattn_ff_mult,
         lm_name_or_path=args.encoder_name_or_path,)
     decoder = FlamingoT5Decoder(decoder_config, encoder.get_input_embeddings())
 
