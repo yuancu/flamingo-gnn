@@ -60,10 +60,10 @@ def main(args):
     decoder_config = FlamingoConfig(
         d_model=encoder.config.d_model,
         dim_media=args.gnn_dim,
-        xattn_dim_head=64,
-        xattn_heads=8,
-        xattn_every=1,
-        xattn_ff_mult=4,
+        xattn_dim_head=args.xattn_dim_head,
+        xattn_heads=args.xattn_heads,
+        xattn_every=args.xattn_every,
+        xattn_ff_mult=args.xattn_ff_mult,
         lm_name_or_path=args.encoder_name_or_path,)
     decoder = FlamingoT5Decoder(decoder_config, encoder.get_input_embeddings())
 
@@ -99,7 +99,7 @@ def main(args):
         callbacks = None
     trainer = pl.Trainer(max_epochs=args.n_epochs, fast_dev_run=args.fast_dev_run,
                          default_root_dir=os.path.join(args.save_dir, args.run_name),
-                         accelerator='gpu', logger=wandb_logger,
+                         accelerator='gpu', strategy=args.strategy, logger=wandb_logger,
                          callbacks=callbacks, gradient_clip_val=0.5,
                          accumulate_grad_batches=8)
 

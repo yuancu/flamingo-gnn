@@ -1,4 +1,6 @@
 absl-py
+click
+deepspeed
 einops
 einops-exts
 evaluate

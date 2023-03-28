@@ -8,6 +8,10 @@ default: &default
     ie_layer_num: 1  # number of hidden layers in the MInt operator
     cxt_node_connects_all: True  # Whether to connect the interaction node to all the retrieved KG nodes or only the linked nodes.
     encoder_name_or_path: t5-base
+    xattn_dim_head: 64
+    xattn_heads: 8
+    xattn_every: 1
+    xattn_ff_mult: 4
   data: &data-default
     kg_only_use_qa_nodes: False
     max_node_num: 200  # Max number of nodes / the threshold used to prune nodes.
@@ -37,6 +41,7 @@ default: &default
     freeze_lm: True
     freeze_non_lm: False
     max_seq_len: 512
+    strategy:
   misc: &misc-default
     mode: train  # run training or evaluation
     save_dir: ./saved_models/  # model output directory
@@ -276,7 +281,7 @@ pretrain_wikitop: &pretrain-wikitop
     encoder_input: context_prefix
     decoder_label: context_suffix
     max_node_num: 30
-  optim:
+  optim: &pretrain-wikitop-optim
     <<: *optim-default
     max_seq_len: 312
     batch_size: 32
@@ -287,6 +292,18 @@ pretrain_wikitop: &pretrain-wikitop
   misc:
     <<: *misc-default
     fast_dev_run: False
+
+pretrain_wikitop_xl: &pretrain-wikitop-xl
+  <<: *pretrain-wikitop
+  model:
+    <<: *pretrain-wikitop-model
+    encoder_name_or_path: google/flan-t5-xl
+    xattn_every: 2
+  optim:
+    <<: *pretrain-wikitop-optim
+    batch_size: 32
+    strategy: deepspeed_stage_3_offload
+    optimizer: deepspeed_offload
 
 # MCWQ Dataset
 mcwq_fintune: &mcwq-finetune
@@ -315,7 +332,7 @@ finetune_mcwq: &finetune-mcwq
     eval_batch_size: 128
     freeze_lm: True
     freeze_non_lm: False
-    learning_rate: 0.00001
+    learning_rate: 0.00005
     n_epochs: 100
   misc:
     <<: *misc-default
@@ -333,3 +350,17 @@ finetune_mcwq_no_graph_pretrained:
     <<: *misc-default
     checkpoint_path: logs/flamingo-gnn/6imyuuzm/checkpoints/epoch=24-step=16175.ckpt
     no_graph: True
+
+
+debug_ddp:
+  <<: *finetune-mcwq
+  model:
+    <<: *model-default
+    encoder_name_or_path: t5-small
+  optim:
+    <<: *optim-default
+    strategy: ddp
+  misc:
+    <<: *misc-default
+    no_graph: True
+    fast_dev_run: True

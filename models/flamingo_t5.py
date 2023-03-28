@@ -240,7 +240,7 @@ class FlamingoT5Decoder(FlamingoDecoderBaseModel):
 
     def __init__(self, config: FlamingoConfig, embed_tokens, **kwargs):
         super().__init__(config, **kwargs)
-        assert config.lm_name_or_path is not None and config.lm_name_or_path.startswith("t5"), f"Unexpected lm {config.lm_name_or_path}"
+        assert config.lm_name_or_path is not None and "t5" in config.lm_name_or_path, f"Unexpected lm {config.lm_name_or_path}"
         self.lm = T5ForCausalLM.from_pretrained(config.lm_name_or_path, embed_tokens=embed_tokens)
         assert self.lm.config.d_model == config.d_model, \
             f"LM and Flamingo model must have the same token embedding dimension. Got {self.lm.config.d_model} and {config.d_model}"
