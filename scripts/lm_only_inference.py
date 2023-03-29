@@ -45,9 +45,9 @@ def main(args):
 if __name__ == '__main__':
     # Create the parser with fields config_path, profile and model_name_or_path
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config_path', type=str, default='configs/lmgnn.yaml')
+    parser.add_argument('--config-path', type=str, default='configs/lmgnn.yaml')
     parser.add_argument('--profile', type=str, default='finetune_mcwq')
-    parser.add_argument('--model_name_or_path', type=str, default='google/flan-t5-xxl')
+    parser.add_argument('--model-name-or-path', type=str, default='google/flan-t5-xxl')
 
     args = parser.parse_args()
     main(args)

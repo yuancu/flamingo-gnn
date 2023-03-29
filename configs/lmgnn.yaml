@@ -299,9 +299,10 @@ pretrain_wikitop_xl: &pretrain-wikitop-xl
     <<: *pretrain-wikitop-model
     encoder_name_or_path: google/flan-t5-xl
     xattn_every: 2
+    xattn_ff_mult: 1
   optim:
     <<: *pretrain-wikitop-optim
-    batch_size: 32
+    batch_size: 8
     strategy: deepspeed_stage_3_offload
     optimizer: deepspeed_offload
 
