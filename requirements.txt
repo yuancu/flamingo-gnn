@@ -9,6 +9,7 @@ pytest
 pytorch-lightning
 pyyaml
 rouge_score
+sentencepiece
 torch
 tqdm
 transformers

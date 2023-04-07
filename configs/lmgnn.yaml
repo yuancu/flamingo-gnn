@@ -353,6 +353,29 @@ finetune_mcwq_no_graph_pretrained:
     no_graph: True
 
 
+test:
+  <<: *finetune-mcwq
+  model:
+    <<: *model-default
+    encoder_name_or_path: t5-small
+  data:
+    <<: *data-default
+    <<: *wikidata5m
+    encoder_input: question
+    decoder_label: answer
+    train_statements: tests/data/statement.jsonl
+    train_adj: tests/data/adj
+    dev_statements: tests/data/statement.jsonl
+    dev_adj: tests/data/adj
+    legacy_adj: False
+  optim:
+    <<: *optim-default
+    strategy: ddp
+  misc:
+    <<: *misc-default
+    no_graph: True
+    fast_dev_run: True
+
 debug_ddp:
   <<: *finetune-mcwq
   model:

@@ -1,4 +1,6 @@
 """Test DDP training with WandbLogger."""
+from copy import deepcopy
+
 import pytest
 import torch
 from pytorch_lightning import Trainer
@@ -13,6 +15,8 @@ def test_ddp_and_wandb(args, train_loader, encoder, decoder):
     if torch.cuda.device_count() == 0:
         # skip test if no GPU
         pytest.skip('No GPU available for testing DDP')
+    args = deepcopy(args)
+    args.batch_size = 2
     model = LitT5Seq2Seq(
         args=args,
         encoder=encoder,

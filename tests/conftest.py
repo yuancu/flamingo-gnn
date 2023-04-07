@@ -16,7 +16,7 @@ DUMMY_BATCH_PATH = 'tests/dummy_batch.pkl'
 
 @pytest.fixture
 def args():
-    args = load_args()
+    args = load_args(profile='test')
     args.batch_size = 2
     args.encoder_name_or_path = 't5-small'
     args.k = 2  # gnn layerss
