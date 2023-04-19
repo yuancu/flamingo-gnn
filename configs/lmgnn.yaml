@@ -41,7 +41,7 @@ default: &default
     freeze_lm: True
     freeze_non_lm: False
     max_seq_len: 512
-    strategy:
+    strategy: auto
   misc: &misc-default
     mode: train  # run training or evaluation
     save_dir: ./saved_models/  # model output directory
@@ -203,10 +203,10 @@ finetune_mintaka: &finetune-mintaka
     <<: *data-default
     <<: *wikidata5m
     <<: *mintaka-finetune
-    max_node_num: 10
+    max_node_num: 128
     encoder_input: question
     decoder_label: answer
-    num_dataloader_workers: 12
+    num_dataloader_workers: 8
   optim:
     <<: *optim-default
     max_seq_len: 64
@@ -215,12 +215,13 @@ finetune_mintaka: &finetune-mintaka
     eval_batch_size: 144
     freeze_lm: True
     freeze_non_lm: False
-    learning_rate: 0.00001
+    learning_rate: 0.00005
   misc: 
     <<: *misc-default
     wandb_mode: online
     retrieve_text: False
     fast_dev_run: False
+    checkpoint_path: artifacts/pretrained/lit_wikitop_epoch24.ckpt
 
 finetune_mintaka_no_graph:
   <<: *finetune-mintaka
@@ -228,6 +229,16 @@ finetune_mintaka_no_graph:
     <<: *misc-default
     wandb_mode: online
     no_graph: True
+    checkpoint_path:
+
+finetune_mintaka_no_graph_pretrained:
+  <<: *finetune-mintaka
+  misc:
+    <<: *misc-default
+    wandb_mode: online
+    no_graph: True
+    checkpoint_path: artifacts/pretrained/lit_wikitop_epoch24.ckpt
+
 
 # Wikidataset for pretrain (made from the cross links on Wikipedia)
 wiki_pretrain: &wiki-pretrain
@@ -337,7 +348,7 @@ finetune_mcwq: &finetune-mcwq
     n_epochs: 100
   misc:
     <<: *misc-default
-    checkpoint_path: logs/flamingo-gnn/6imyuuzm/checkpoints/epoch=24-step=16175.ckpt
+    checkpoint_path: artifacts/pretrained/lit_wikitop_epoch24.ckpt
 
 finetune_mcwq_no_graph:
   <<: *finetune-mcwq
@@ -349,7 +360,7 @@ finetune_mcwq_no_graph_pretrained:
   <<: *finetune-mcwq
   misc:
     <<: *misc-default
-    checkpoint_path: logs/flamingo-gnn/6imyuuzm/checkpoints/epoch=24-step=16175.ckpt
+    checkpoint_path: artifacts/pretrained/lit_wikitop_epoch24.ckpt
     no_graph: True
 
 

@@ -32,7 +32,8 @@ from tqdm import tqdm
 
 
 def create_adjacency_matrix(triplets, relation2id, entity2id):
-    """
+    """Create a sparse adjacency matrix of shape (all_rel * n_node, n_node) from the list of triplets.
+    Value one indicates the existence of an edge, while value zero indicates the absence of an edge.
     Args:
         edges: list[tuple]
             list of (head, relation, tail) triplets, where the head is always wikidata entity, while the tail is
@@ -44,12 +45,21 @@ def create_adjacency_matrix(triplets, relation2id, entity2id):
             adjacency matrix of the graph
         qids: list[int]
             basically a mapping from the node index in the subgraph to the qid.
+        filter_stat: dict[str: int]
     """
     head_qids = set([triplet[0] for triplet in triplets])
     tail_qids = set([triplet[-1] for triplet in triplets])
     for qid in head_qids.union(tail_qids):
         assert qid.startswith('Q')
     qids = list(head_qids.union(tail_qids))
+
+    # Filter out the nodes that are not in the entity2id mapping
+    qids = [qid for qid in qids if qid in entity2id]
+    n_before_filter = len(triplets)
+    triplets = [triplet for triplet in triplets if triplet[0] in entity2id and triplet[-1] in entity2id and triplet[1] in relation2id]
+    n_after_filter = len(triplets)
+    filter_stat = {'filtered': n_before_filter - n_after_filter, 'total': n_before_filter}
+
     n_node = len(qids)
     n_rel = len(relation2id)
     adjacency = np.zeros((n_rel, n_node, n_node), dtype=np.uint8)
@@ -65,7 +75,8 @@ def create_adjacency_matrix(triplets, relation2id, entity2id):
         adjacency = coo_matrix(adjacency.reshape(-1, n_node))
     # convert nodes to their integer representation. 
     related_nodes = [entity2id[qid] for qid in qids]
-    return adjacency, related_nodes
+
+    return adjacency, related_nodes, filter_stat
 
 
 def create_masks(qids): 
@@ -85,9 +96,9 @@ def create_masks(qids):
 def create_subgraph_entry(triplets, relation2id, entity2id):
     """Create a subgraph tuple consisting of the adjacency matrix, related nodes in indices and question
     and answer masks."""
-    adj, related_nodes = create_adjacency_matrix(triplets, relation2id, entity2id)
+    adj, related_nodes, filter_stat = create_adjacency_matrix(triplets, relation2id, entity2id)
     qmask, amask = create_masks(related_nodes)
-    return adj, related_nodes, qmask, amask
+    return adj, related_nodes, qmask, amask, filter_stat
 
 
 def main(args):
@@ -95,27 +106,34 @@ def main(args):
         relation2id = pickle.load(f)
     with open(args.entity2id, 'rb') as f:
         entity2id = pickle.load(f)
-    adjacency_dir = Path(args.outut_dir) / 'adj'
+    adjacency_dir = Path(args.output_dir)
     if not adjacency_dir.exists():
         adjacency_dir.mkdir(parents=True)
         print(f'Created adjacency directory {adjacency_dir}')
     subgraphs = srsly.read_jsonl(args.input)
     total = sum(1 for _ in srsly.read_jsonl(args.input))
+    filter_stats = []
     for subgraph in tqdm(subgraphs, total=total, desc="Creating subgraph pickles"):
         sample_id = subgraph['id']
-        adj, related_nodes, qmask, amask = create_subgraph_entry(subgraph['triplets'], relation2id, entity2id)
+        adj, related_nodes, qmask, amask, filter_stat = create_subgraph_entry(subgraph['triplets'], relation2id, entity2id)
+        filter_stats.append(filter_stat)
         # Save the adjacency matrix
         with open(adjacency_dir / f'{sample_id}.pkl', 'wb') as f:
             pickle.dump((adj, related_nodes, qmask, amask), f)
 
+    # Print out the filter statistics
+    average_filtered = sum([stat['filtered'] for stat in filter_stats]) / len(filter_stats)
+    average_total = sum([stat['total'] for stat in filter_stats]) / len(filter_stats)
+    print(f'Average number of filtered out triplets: {average_filtered:.4f} / {average_total:.4f}')
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input', type=str, required=True, help='path to the retrieved subgraph jsonl file, each\
+    parser.add_argument('-i', '--input', type=str, required=True, help='path to the retrieved subgraph jsonl file, each\
                         line is expected to be a json object with id, question and triplets')
-    parser.add_argument('-o', '--outut-dir', required=True, help='path to the output directory')
+    parser.add_argument('-o', '--output-dir', required=True, help='path to the output adjacency directory')
     parser.add_argument('--relation2id', type=str, required=True, help='path to the relation2id pickle file')
     parser.add_argument('--entity2id', type=str, required=True, help='path to the entity2id pickle file')
     args = parser.parse_args()
-    
+
     main(args)
