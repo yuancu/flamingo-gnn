@@ -10,7 +10,6 @@ from models.t5_seq2seq import T5Seq2Seq
 from evaluation.squad import compute_score
 
 
-
 def evaluate(predictions, references):
     score = compute_score(predictions, references)
     return score
@@ -18,10 +17,23 @@ def evaluate(predictions, references):
 
 class LitT5Seq2Seq(pl.LightningModule):
     def __init__(self, args, encoder, decoder, freeze_lm=True, freeze_non_lm=False,
-                 do_validation=False, return_val_predictions=False):
-        """
+                 mode='pretrain', return_val_predictions=False):
+        """Initialize a T5Seq2Seq model.
+
         Warning: the decoder_start_token_id will be initialized as the pad_token_id of a
         tokenizer constructed from args.encoder_name_or_path tokenizer.
+
+        Args:
+            args (argparse.Namespace): arguments used to initialize the model.
+            encoder (T5Encoder): a T5Encoder model.
+            decoder (T5Decoder): a T5Decoder model.
+            freeze_lm (bool, optional): whether to freeze the weights of the T5 model. Defaults to True.
+            freeze_non_lm (bool, optional): whether to freeze the weights of the added parts. Defaults to False.
+            mode (str, optional): the mode of the model, either 'pretrain' or 'finetune'. Defaults to 'pretrain'.
+                This influences the validation step: in 'pretrain' mode, the validation step returns the perplexity
+                of the validation set; in 'finetune' mode, the validation step returns the F1 score of the validation
+                set.
+            return_val_predictions (bool, optional): whether to return the predictions of the validation set. Defaults to False.
         """
         super().__init__()
         self.validation_step_outputs = []
@@ -47,14 +59,10 @@ class LitT5Seq2Seq(pl.LightningModule):
         self.tokenizer = tokenizer
         self.evaluator = evaluate
         # The current setting only allows validation in downstream tasks
-        self.do_validation = do_validation
+        self.mode = mode
         self.return_val_predictions = return_val_predictions
 
-    def training_step(self, batch, batch_idx):
-        # input_ids, attention_mask, token_type_ids, special_token_mask, \
-        #     decoder_labels,\
-        #     node_ids, node_type_ids, node_scores, adj_lengths, special_nodes_mask,\
-        #     edge_index, edge_type, pos_triples, neg_nodes = batch
+    def batch_forward(self, batch):
         input_ids, attention_mask, decoder_labels, \
             node_ids, node_type_ids, adj_lengths, \
             edge_index, edge_type = batch
@@ -73,14 +81,21 @@ class LitT5Seq2Seq(pl.LightningModule):
             output_hidden_states=True,
             labels=decoder_labels,
             return_dict=True)
+        return output
 
+    def training_step(self, batch, batch_idx):
+        output = self.batch_forward(batch)
         loss = output.loss
         self.log('train_loss', loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        if not self.do_validation:
-            return {}
+        if self.mode == 'pretrain':
+            output = self.batch_forward(batch)
+            loss = output.loss
+            perplexity = torch.exp(loss)
+            return {'perplexity': perplexity}
+
         input_ids, attention_mask, answers, \
             node_ids, node_type_ids, adj_lengths, \
             edge_index, edge_type = batch
@@ -110,9 +125,13 @@ class LitT5Seq2Seq(pl.LightningModule):
         return scores
 
     def on_validation_epoch_end(self):
-        if not self.do_validation:
-            return {}
         outputs = self.validation_step_outputs
+        if self.mode == 'pretrain':
+            if len(outputs) > 0 and "perplexity" in outputs[0]:
+                perplexity = np.mean([o["perplexity"] for o in outputs])
+                self.log('val_perplexity', perplexity)
+                return {'val_perplexity': perplexity}
+            return {}
         if len(outputs) > 0:
             mean_keys = outputs[0].keys()
             mean_keys = set(mean_keys) - set(["predictions", "references"])

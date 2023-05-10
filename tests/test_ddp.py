@@ -23,7 +23,7 @@ def test_ddp_and_wandb(args, train_loader, encoder, decoder):
         decoder=decoder,
         freeze_lm=False,
         freeze_non_lm=False,
-        do_validation=False)
+        mode='pretrain')
     wandb_logger = WandbLogger(project=args.wandb_project, offline=True)
     device_cnt = 2 if torch.cuda.device_count() > 1 else 1
     trainer = Trainer(accelerator='gpu', strategy='ddp', devices=device_cnt,

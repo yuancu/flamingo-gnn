@@ -56,6 +56,6 @@ def test_lightning(args, train_loader, encoder, decoder):
         decoder=decoder,
         freeze_lm=False,
         freeze_non_lm=False,
-        do_validation=False)
+        mode='pretrain')
     trainer = Trainer(fast_dev_run=True)
     trainer.fit(model, train_dataloaders=train_loader)

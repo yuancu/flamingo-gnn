@@ -36,10 +36,7 @@ def main(args):
     # 2. Load data
     # Set collator and dataset according to the task: pretrain is mainly devided into two types:
     # with or without graph
-    if hasattr(args, 'no_graph') and args.no_graph:
-        dummy_graph = True
-    else:
-        dummy_graph = False
+    dummy_graph = hasattr(args, 'no_graph') and args.no_graph
     train_kwargs={'encoder_input': args.encoder_input, 'decoder_label': args.decoder_label}
     if mode == 'pretrain':
         val_decoder_label = args.decoder_label
@@ -73,21 +70,19 @@ def main(args):
             args.checkpoint_path, strict=False,
             args=args, encoder=encoder, decoder=decoder,
             freeze_lm=args.freeze_lm, freeze_non_lm=args.freeze_non_lm,
-            do_validation=(mode=='finetune')
+            mode=mode
         )
     else:
         model = LitT5Seq2Seq(
             args=args,encoder=encoder, decoder=decoder,
             freeze_lm=args.freeze_lm, freeze_non_lm=args.freeze_non_lm,
-            do_validation=(mode=='finetune'))
+            mode=mode
+        )
 
     # 5. Create trainer
     now = datetime.now().strftime('%d%H%M')
     run_name = f"{args.run_name}-{now}"
-    if args.wandb_mode in ['offline', 'disabled']:
-        offline = True
-    else:
-        offline = False
+    offline = args.wandb_mode in ['offline', 'disabled']
     Path(args.log_dir).mkdir(parents=True, exist_ok=True)
     wandb_logger = WandbLogger(project=args.wandb_project, offline=offline, name=run_name,
                                group=config_profile, save_dir=args.log_dir)
