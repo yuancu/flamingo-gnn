@@ -26,4 +26,4 @@ export TOKENIZERS_PARALLELISM=true
 export WANDB__SERVICE_WAIT=300
 
 # run pretrain
-python -u train.py --finetune --config configs/lmgnn.yaml --config-profile finetune_mcwq --run-name ftcwq
+python -u train.py --finetune --config configs/lmgnn.yaml --config-profile finetune_mcwq --run-name ftcwqpre0

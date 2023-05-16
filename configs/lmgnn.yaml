@@ -49,7 +49,7 @@ default: &default
     checkpoint_path:  # The checkpoint for finetuning, or to resume training from if restore_training is set
     restore_training: False  # Whether to restore training from the checkpoint
     # added
-    wandb_mode: offline # online, offline or disabled
+    wandb_mode: online # online, offline or disabled
     wandb_project: flamingo-gnn
     world_size: 1
     fast_dev_run: False
@@ -58,6 +58,7 @@ default: &default
     save_interval: 5
     log_dir: logs
     retrieve_text: False
+    prefix_ratio: 0.2
 
 # Data
 
@@ -65,7 +66,11 @@ wikidata5m: &wikidata5m
   kg: wikidata5m
   num_relations: 828  # number of relations for wikidata5m
   ent_emb_paths: data/wikidata5m/entity_embeddings.npy
-  kg_vocab_path: data/wikidata5m/graphvite-complex-wikidata5m.pkl
+
+wikidata5m_t5_base: &wiki5m-t5-base
+  kg: wikidata5m
+  num_relations: 828  # number of relations for wikidata5m
+  ent_emb_paths: data/wikidata5m/entity_embeddings_t5_base.npy
 
 squad2_pretrain: &squad2-pretrain
   dataset: squad2
@@ -346,6 +351,7 @@ pretrain_wikitop: &pretrain-wikitop
   misc:
     <<: *misc-default
     fast_dev_run: False
+    prefix_ratio: 0.0
 
 pretrain_wikitop_xl: &pretrain-wikitop-xl
   <<: *pretrain-wikitop
@@ -391,9 +397,10 @@ finetune_mcwq: &finetune-mcwq
     n_epochs: 100
   misc:
     <<: *misc-default
-    checkpoint_path: artifacts/pretrained/lit_wikitop_epoch24.ckpt
+    # checkpoint_path: artifacts/pretrained/lit_wikitop_epoch24.ckpt
+    checkpoint_path: artifacts/pretrained/lit_wikitop_e30_pre0.ckpt
 
-finetune_mcwq_no_graph:
+finetune_mcwq_no_graph: &finetune-mcwq-no-graph
   <<: *finetune-mcwq
   misc:
     <<: *misc-default
@@ -405,6 +412,9 @@ finetune_mcwq_no_graph_pretrained:
     <<: *misc-default
     checkpoint_path: artifacts/pretrained/lit_wikitop_epoch24.ckpt
     no_graph: True
+
+finetune_mcwq_t5:
+  <<: *finetune-mcwq-no-graph
 
 
 test:

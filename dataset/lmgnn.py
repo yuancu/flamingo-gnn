@@ -503,7 +503,7 @@ class DataCollatorForT5MLM:
 
         return is_noise[:orig_length]
 
-    
+
 class Retriever(ABC):
     """Retriever base class.
     """
@@ -597,7 +597,7 @@ class T5GNNDataCollator:
     dummy_graph: bool = False
     corrupt_text: bool = False
     return_raw_answers: bool = False
-    
+
     def __call__(self, examples):
         # Tensors of shape [batch_size, num_choices, max_seq_length] (written separately for clarity)
         input_ids = [example[0] for example in examples]
@@ -644,18 +644,21 @@ def load_data(args, corrupt=False, dummy_graph=False, num_workers=1,
         collate_fn (callable): dragond_collate_fn, dragond_adapt2enc_collate_fn or dragond_encdec_collate_fn
         corrupt (bool): whether to corrupt the graph and text
         num_workers (int): number of workers for dataloader
+        prefix_ratio (float): ratio of prefix in prefix-LM
     Returns:
         train_dataloader, validation_dataloader
     """
     num_relations = args.num_relations
     model_name = args.encoder_name_or_path
     max_seq_length = args.max_seq_len
+    prefix_ratio = float(args.prefix_ratio)
     train_dataset = LMGNNDataset(
         statement_path=args.train_statements,
         num_relations=num_relations,
         adj_path=args.train_adj,
         model_name=model_name,
         max_seq_length=max_seq_length,
+        prefix_ratio=prefix_ratio,
         **train_kwargs)
     validation_dataset = LMGNNDataset(
         statement_path=args.dev_statements,
@@ -663,6 +666,7 @@ def load_data(args, corrupt=False, dummy_graph=False, num_workers=1,
         num_relations=num_relations,
         model_name=model_name,
         max_seq_length=max_seq_length,
+        prefix_ratio=prefix_ratio,
         **val_kwargs)
     # get tokenizer
     train_collator = T5GNNDataCollator(

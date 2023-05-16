@@ -80,7 +80,7 @@ def main(args):
         )
 
     # 5. Create trainer
-    now = datetime.now().strftime('%d%H%M')
+    now = datetime.now().strftime('%m%d%H%M')
     run_name = f"{args.run_name}-{now}"
     offline = args.wandb_mode in ['offline', 'disabled']
     Path(args.log_dir).mkdir(parents=True, exist_ok=True)
@@ -91,6 +91,8 @@ def main(args):
         checkpoint_callback = ModelCheckpoint(monitor="em", mode="max", save_weights_only=True,)
         callbacks = [checkpoint_callback]
     else:
+        checkpoint_callback = ModelCheckpoint(monitor="loss", mode="min", save_weights_only=True,
+                                              dirpath="artifacts/pretrained", filename=args.run_name+".ckpt")
         callbacks = None
     trainer = pl.Trainer(max_epochs=args.n_epochs, fast_dev_run=args.fast_dev_run,
                          default_root_dir=os.path.join(args.save_dir, args.run_name),

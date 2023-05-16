@@ -35,6 +35,7 @@ class LitT5Seq2Seq(pl.LightningModule):
                 set.
             return_val_predictions (bool, optional): whether to return the predictions of the validation set. Defaults to False.
         """
+        assert mode in ['pretrain', 'finetune']
         super().__init__()
         self.validation_step_outputs = []
         self.save_hyperparameters(args)
@@ -94,6 +95,7 @@ class LitT5Seq2Seq(pl.LightningModule):
             output = self.batch_forward(batch)
             loss = output.loss
             perplexity = torch.exp(loss)
+            self.log('perplexity', perplexity)
             return {'perplexity': perplexity}
 
         input_ids, attention_mask, answers, \
@@ -129,7 +131,7 @@ class LitT5Seq2Seq(pl.LightningModule):
         if self.mode == 'pretrain':
             if len(outputs) > 0 and "perplexity" in outputs[0]:
                 perplexity = np.mean([o["perplexity"] for o in outputs])
-                self.log('val_perplexity', perplexity)
+                self.log('val_perplexity', perplexity, on_epoch=True)
                 return {'val_perplexity': perplexity}
             return {}
         if len(outputs) > 0:
