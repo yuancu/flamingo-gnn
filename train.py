@@ -10,8 +10,10 @@ import torch
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 
-from dataset.lmgnn import load_data
+from dataset.lmgnn import load_data as load_lmgnn_data
+from dataset.mutiple_choice import load_data as load_multiple_choice_data
 from lightning.lit_seq2seq import LitT5Seq2Seq
+from lightning.lit_multiple_choice import LitT5Seq2SeqForMultipleChoice
 from models.flamingo_t5 import FlamingoConfig, FlamingoT5Decoder
 from utils.common import load_args
 from utils.model_utils import construct_encoder
@@ -30,6 +32,7 @@ def main(args):
     run_name = args.run_name
     mode = 'pretrain' if args.pretrain else 'finetune'
     config_profile = args.config_profile
+    multiple_choice = args.multiple_choice
     args = load_args(config_path=args.config, profile=args.config_profile)
     args.run_name = run_name
 
@@ -38,12 +41,11 @@ def main(args):
     # with or without graph
     dummy_graph = hasattr(args, 'no_graph') and args.no_graph
     train_kwargs={'encoder_input': args.encoder_input, 'decoder_label': args.decoder_label}
-    if mode == 'pretrain':
-        val_decoder_label = args.decoder_label
-    else:
-        val_decoder_label = 'raw_answers'
-    val_kwargs={'encoder_input': args.encoder_input, 'decoder_label': val_decoder_label}
-    train_loader, val_loader = load_data(
+    val_kwargs={'encoder_input': args.encoder_input, 'decoder_label': args.decoder_label}
+    if mode == 'finetune' and not multiple_choice:
+        val_kwargs['decoder_label'] = 'raw_answers'
+
+    train_loader, val_loader = load_multiple_choice_data(
         args,
         corrupt=False,
         dummy_graph=dummy_graph,
@@ -65,15 +67,16 @@ def main(args):
     decoder = FlamingoT5Decoder(decoder_config, encoder.get_input_embeddings())
 
     # 4. Create pytorch lightning model
+    model_cls = LitT5Seq2SeqForMultipleChoice if multiple_choice else LitT5Seq2Seq
     if args.checkpoint_path and not args.restore_training: # if restore, we don't need to load the checkpoint here
-        model = LitT5Seq2Seq.load_from_checkpoint(
+        model = model_cls.load_from_checkpoint(
             args.checkpoint_path, strict=False,
             args=args, encoder=encoder, decoder=decoder,
             freeze_lm=args.freeze_lm, freeze_non_lm=args.freeze_non_lm,
             mode=mode
         )
     else:
-        model = LitT5Seq2Seq(
+        model = model_cls(
             args=args,encoder=encoder, decoder=decoder,
             freeze_lm=args.freeze_lm, freeze_non_lm=args.freeze_non_lm,
             mode=mode
@@ -86,7 +89,7 @@ def main(args):
     Path(args.log_dir).mkdir(parents=True, exist_ok=True)
     wandb_logger = WandbLogger(project=args.wandb_project, offline=offline, name=run_name,
                                group=config_profile, save_dir=args.log_dir)
-    wandb_logger.experiment.config.update(vars(args))
+    # wandb_logger.experiment.config.update(vars(args))
     if mode == 'finetune':
         checkpoint_callback = ModelCheckpoint(monitor="em", mode="max", save_weights_only=True,)
         callbacks = [checkpoint_callback]
@@ -124,6 +127,7 @@ if __name__ == '__main__':
     parser.add_argument('--run-name', type=str, required=True)
     parser.add_argument('--pretrain', action='store_true')
     parser.add_argument('--finetune', action='store_true')
+    parser.add_argument('--multiple-choice', action='store_true')
     args = parser.parse_args()
     if not args.pretrain ^ args.finetune:
         raise ValueError('Either pretrain or finetune should be set.')

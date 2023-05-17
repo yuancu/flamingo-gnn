@@ -26,6 +26,7 @@ class T5Seq2Seq(EncoderDecoderModel):
         self.config.decoder_start_token_id = self.decoder.config.decoder_start_token_id
         self.config.pad_token_id = self.decoder.config.pad_token_id
         self.config.vocab_size = self.decoder.config.vocab_size
+        self.loss_reduction = 'mean'
 
     def forward(
         self,
@@ -114,7 +115,7 @@ class T5Seq2Seq(EncoderDecoderModel):
         loss = None
         if labels is not None:
             logits = decoder_outputs.logits if return_dict else decoder_outputs[0]
-            loss_fct = CrossEntropyLoss()
+            loss_fct = CrossEntropyLoss(reduction=self.loss_reduction)
             loss = loss_fct(logits.reshape(-1, self.decoder.config.vocab_size), labels.view(-1))
 
         if not return_dict:
