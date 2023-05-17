@@ -59,6 +59,8 @@ default: &default
     log_dir: logs
     retrieve_text: False
     prefix_ratio: 0.2
+    monitor: em
+    monitor_mode: max
 
 # Data
 

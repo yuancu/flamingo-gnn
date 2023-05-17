@@ -91,7 +91,7 @@ def main(args):
                                group=config_profile, save_dir=args.log_dir)
     # wandb_logger.experiment.config.update(vars(args))
     if mode == 'finetune':
-        checkpoint_callback = ModelCheckpoint(monitor="em", mode="max", save_weights_only=True,)
+        checkpoint_callback = ModelCheckpoint(monitor=args.monitor, mode=args.monitor_mode, save_weights_only=True,)
         callbacks = [checkpoint_callback]
     else:
         checkpoint_callback = ModelCheckpoint(monitor="loss", mode="min", save_weights_only=True,
