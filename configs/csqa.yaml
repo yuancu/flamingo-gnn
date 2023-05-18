@@ -78,6 +78,12 @@ csqa: &csqa
   legacy_adj: False
   num_choices: 5
 
+csqa_sanity: &csqa-sanity
+  dataset: csqa
+  train_statements: data/csqa_sanity/statment/train.statement.jsonl
+  train_adj: data/csqa_sanity/adj/train
+  dev_statements: data/csqa_sanity/statment/train.statement.jsonl
+  dev_adj: data/csqa_sanity/adj/train
 
 finetune_csqa: &finetune-csqa
   <<: *default
@@ -87,7 +93,7 @@ finetune_csqa: &finetune-csqa
     <<: *csqa
   optim: &finetune-csqa-optim
     <<: *optim-default
-    learning_rate: 0.0001
+    learning_rate: 0.001
     batch_size: 64
     max_seq_len: 512
     freeze_lm: True
@@ -95,3 +101,17 @@ finetune_csqa: &finetune-csqa
   misc:
     <<: *misc-default
     fast_dev_run: False
+
+finetune_csqa_sanity: &finetune-csqa-sanity
+  <<: *finetune-csqa
+  data:
+    <<: *data-default
+    <<: *conceptnet
+    <<: *csqa-sanity
+  optim:
+    <<: *optim-default
+    learning_rate: 0.001
+    batch_size: 16
+    max_seq_len: 512
+    freeze_lm: True
+    freeze_non_lm: False
