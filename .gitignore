@@ -6,6 +6,8 @@ notebooks
 notebooks-archive
 lightning_logs/
 wandb/
+.vscode/
+artifacts/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -50,6 +50,7 @@ class LMGNNDataset(Dataset):
         Valid pairs of encoder_input and decoder_label:
         - Pretraining (Denoise): encoder_input = 'context', decoder_label = 'context'
         - Pretraining (PrefixLM): encoder_input = 'context_prefix', decoder_label = 'context_suffix'
+        - Pretraining (ContextPrediction): encoder_input = 'question', decoder_label = 'context'
         - Finetuning: encoder_input = 'question' | 'retrieval_augmented_question' | 'contextualized_question',
           decoder_label = 'answer'
         - Test: encoder_input = 'question' | 'retrieval_augmented_question', decoder_label = 'raw_answers'
@@ -314,6 +315,9 @@ class LMGNNDataset(Dataset):
             encoder_input = context
         elif self.encoder_input == 'question':
             encoder_input = 'question: ' + question
+            # A special treatment for context prediction pretraining
+            if self.decoder_label == 'context':
+                encoder_input = "Predict the fact: " + encoder_input
         elif self.encoder_input == 'contextualized_question':
             encoder_input = 'question: ' + question + ' context: ' + context
         elif self.encoder_input == 'context_prefix':

@@ -45,13 +45,23 @@ def main(args):
     if mode == 'finetune' and not multiple_choice:
         val_kwargs['decoder_label'] = 'raw_answers'
 
-    train_loader, val_loader = load_multiple_choice_data(
-        args,
-        corrupt=False,
-        dummy_graph=dummy_graph,
-        num_workers=8,
-        train_kwargs=train_kwargs,
-        val_kwargs=val_kwargs,)
+    if multiple_choice:
+        train_loader, val_loader = load_multiple_choice_data(
+            args,
+            corrupt=False,
+            dummy_graph=dummy_graph,
+            num_workers=8,
+            train_kwargs=train_kwargs,
+            val_kwargs=val_kwargs,
+            num_choices=args.num_choices,)
+    else:
+        train_loader, val_loader = load_lmgnn_data(
+            args,
+            corrupt=False,
+            dummy_graph=dummy_graph,
+            num_workers=8,
+            train_kwargs=train_kwargs,
+            val_kwargs=val_kwargs,)
 
     # 3. Create encoder and decoder
     encoder = construct_encoder(args)

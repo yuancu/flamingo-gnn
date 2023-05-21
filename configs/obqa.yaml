@@ -7,7 +7,7 @@ default: &default
     ie_dim: 200  # number of the hidden units of the MInt operator.
     ie_layer_num: 1  # number of hidden layers in the MInt operator
     cxt_node_connects_all: True  # Whether to connect the interaction node to all the retrieved KG nodes or only the linked nodes.
-    encoder_name_or_path: t5-small
+    encoder_name_or_path: t5-base
     xattn_dim_head: 64
     xattn_heads: 8
     xattn_every: 1
@@ -50,10 +50,10 @@ default: &default
     restore_training: False  # Whether to restore training from the checkpoint
     # added
     wandb_mode: online # online, offline or disabled
-    wandb_project: commensense
+    wandb_project: obqa
     world_size: 1
     fast_dev_run: False
-    log_interval: 20
+    log_interval: 10
     run_name:
     save_interval: 5
     log_dir: logs
@@ -69,47 +69,56 @@ conceptnet: &conceptnet
   ent_emb_paths: data/cpnet/tzw.ent.npy
 
 
-csqa: &csqa
-  dataset: csqa
-  train_statements: data/csqa/statement/train.statement.jsonl
-  train_adj: data/csqa/adj/train
-  dev_statements: data/csqa/statement/dev.statement.jsonl
-  dev_adj: data/csqa/adj/dev
-  legacy_adj: False
-  num_choices: 5
+obqa_pretrain: &obqa-pretrain
+  dataset: obqa
+  train_statements: data/obqa_pretrain/statement/train.statement.jsonl
+  train_adj: data/obqa/adj/train
+  dev_statements: data/obqa_pretrain/statement/dev.statement.jsonl
+  dev_adj: data/obqa/adj/dev
+  num_choices: 4
 
-csqa_sanity: &csqa-sanity
-  dataset: csqa
-  train_statements: data/csqa_sanity/statment/train.statement.jsonl
-  train_adj: data/csqa_sanity/adj/train
-  dev_statements: data/csqa_sanity/statment/train.statement.jsonl
-  dev_adj: data/csqa_sanity/adj/train
-  num_choices: 5
+obqa_sanity: &obqa-sanity
+  dataset: obqa
+  train_statements: data/obqa_sanity/statement/train.statement.jsonl
+  train_adj: data/obqa_sanity/adj/train
+  dev_statements: data/obqa_sanity/statement/train.statement.jsonl
+  dev_adj: data/obqa_sanity/adj/train
+  num_choices: 4
 
+obqa: &obqa
+  dataset: obqa
+  train_statements: data/obqa/statement/train.statement.jsonl
+  train_adj: data/obqa/adj/train
+  dev_statements: data/obqa/statement/dev.statement.jsonl
+  dev_adj: data/obqa/adj/dev
+  num_choices: 4
 
-finetune_csqa: &finetune-csqa
+pretrain_obqa: &pretrain-obqa
   <<: *default
   data:
     <<: *data-default
     <<: *conceptnet
-    <<: *csqa
-  optim: &finetune-csqa-optim
+    <<: *obqa-pretrain
+    encoder_input: question
+    decoder_label: context
+  optim: &pretrain-obqa-optim
     <<: *optim-default
     learning_rate: 0.001
-    batch_size: 64
+    batch_size: 256
     max_seq_len: 512
     freeze_lm: True
     freeze_non_lm: False
-  misc: &finetune-csqa-misc
+    n_epochs: 20
+  misc: &pretrain-obqa-misc
     <<: *misc-default
-    fast_dev_run: False
+    log_interval: 10
 
-finetune_csqa_sanity: &finetune-csqa-sanity
-  <<: *finetune-csqa
+finetune_obqa_sanity: &finetune-obqa-sanity
+  <<: *default
   data:
     <<: *data-default
     <<: *conceptnet
-    <<: *csqa-sanity
+    <<: *obqa-sanity
   optim:
     <<: *optim-default
     learning_rate: 0.005
@@ -120,3 +129,27 @@ finetune_csqa_sanity: &finetune-csqa-sanity
   misc:
     <<: *misc-default
     log_interval: 4
+
+finetune_obqa_pretrained_sanity: &finetune-obqa-pretrained-sanity
+  <<: *finetune-obqa-sanity
+  misc:
+    <<: *misc-default
+    log_interval: 4
+    checkpoint_path: artifacts/pretrained/lit_obqa_t5s_e40.ckpt
+
+finetune_obqa:
+  <<: *default
+  data:
+    <<: *data-default
+    <<: *conceptnet
+    <<: *obqa
+  optim:
+    <<: *optim-default
+    learning_rate: 0.002
+    batch_size: 64
+    max_seq_len: 512
+    freeze_lm: True
+    freeze_non_lm: False
+  misc:
+    <<: *misc-default
+    checkpoint_path: artifacts/pretrained/lit_obqa_t5b_e20.ckpt
