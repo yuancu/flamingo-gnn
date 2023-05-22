@@ -24,7 +24,12 @@ def freeze_params(model, num_trainable_blocks):
     Args:
         model (T5ForConditionalGeneration)
         num_trainable_blocks (int): Number of trainable blocks in the decoder.
+            if num_trainable_blocks == -1, all the parameters will be trainable.
     """
+    if num_trainable_blocks == -1:
+        for param in model.parameters():
+            param.requires_grad = True
+        return
     for param in model.parameters():
         param.requires_grad = False
     num_decoder_blocks = len(model.decoder.block)
@@ -49,6 +54,7 @@ def main(args):
     run_name = args.run_name
     num_trainable_blocks = args.num_trainable_blocks
     multiple_choice = args.multiple_choice
+    inject_choice = args.inject_choice
     mode = 'finetune'
     config_profile = args.config_profile
     args = load_args(config_path=args.config, profile=args.config_profile)
@@ -72,7 +78,8 @@ def main(args):
             num_workers=8,
             train_kwargs=train_kwargs,
             val_kwargs=val_kwargs,
-            num_choices=args.num_choices,)
+            num_choices=args.num_choices,
+            inject_choice=inject_choice,)
     else:
         train_loader, val_loader = load_lmgnn_data(
             args,
@@ -136,5 +143,6 @@ if __name__ == '__main__':
     parser.add_argument('--run-name', type=str, required=True)
     parser.add_argument('--num-trainable-blocks', type=int, help='Number of trainable blocks in the decoder.')
     parser.add_argument('--multiple-choice', action='store_true', help='Whether it is multiple choice task.')
+    parser.add_argument('--inject-choice', action='store_true', help='Whether to inject choice into the input.')
     args = parser.parse_args()
     main(args)

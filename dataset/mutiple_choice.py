@@ -50,7 +50,8 @@ class LMGNNChoiceDataset(Dataset):
     def __init__(self, statement_path, num_relations, adj_path, max_seq_length=256,
                  model_name='t5-base', max_node_num=200, cxt_node_connects_all=True,
                  kg_only_use_qa_nodes=False, truncation_side='right',
-                 encoder_input='question', decoder_label='answer', prefix_ratio=0.2):
+                 encoder_input='question', decoder_label='answer', prefix_ratio=0.2,
+                 inject_choice=False):
         """
         Valid pairs of encoder_input and decoder_label:
         - Pretraining (Denoise): encoder_input = 'context', decoder_label = 'context'
@@ -99,6 +100,9 @@ class LMGNNChoiceDataset(Dataset):
 
         # For prefix completion
         self.prefix_ratio = prefix_ratio
+
+        # For multiple choices
+        self.inject_choice = inject_choice
 
     def __len__(self):
         return len(self.examples)
@@ -295,6 +299,23 @@ class LMGNNChoiceDataset(Dataset):
                     ))
         return examples
 
+    def inject_choices(self, question, choices):
+        """Inject candidates into the question
+        Args:
+            question (str): question
+            choices (list): list of strings
+        Returns:
+            question (str): question with candidates injected
+        """
+        # Inject candidates into the question
+        # We use the following format: <question> \n (A) <choice1> (B) <choice2> ...
+        # This is the same format as the one used in the original code
+        question = question + ' \n Candidates:'
+        for i, choice in enumerate(choices):
+            # it supports up to 7 choices (A to G)
+            question = question + f" ({'ABCDEFG'[i]}) {choice}"
+        return question
+
     def postprocess_text(self, example):
         """Adapted from load_input_tensors in utils/data_utils.py L584
         Args:
@@ -318,6 +339,8 @@ class LMGNNChoiceDataset(Dataset):
             encoder_input = context
         elif self.encoder_input == 'question':
             encoder_input = 'question: ' + question
+            if self.decoder_label == 'choices' and self.inject_choice:
+                encoder_input = self.inject_choices(encoder_input, answers)
         elif self.encoder_input == 'contextualized_question':
             encoder_input = 'question: ' + question + ' context: ' + context
         elif self.encoder_input == 'context_prefix':
@@ -659,7 +682,7 @@ class T5GNNMultipleChoiceDataCollator:
             edge_index, edge_type
 
 
-def load_data(args, corrupt=False, dummy_graph=False, num_workers=1, num_choices=5,
+def load_data(args, corrupt=False, dummy_graph=False, num_workers=1, num_choices=5, inject_choice=False,
               train_kwargs={'encoder_input': 'contextualized_question', 'decoder_label': 'answer'},
               val_kwargs={'encoder_input': 'contextualized_question', 'decoder_label': 'raw_answers'}):
     """Construct the dataset and return dataloaders
@@ -684,6 +707,7 @@ def load_data(args, corrupt=False, dummy_graph=False, num_workers=1, num_choices
         model_name=model_name,
         max_seq_length=max_seq_length,
         prefix_ratio=prefix_ratio,
+        inject_choice=inject_choice,
         **train_kwargs)
     validation_dataset = LMGNNChoiceDataset(
         statement_path=args.dev_statements,
@@ -692,6 +716,7 @@ def load_data(args, corrupt=False, dummy_graph=False, num_workers=1, num_choices
         model_name=model_name,
         max_seq_length=max_seq_length,
         prefix_ratio=prefix_ratio,
+        inject_choice=inject_choice,
         **val_kwargs)
     # get tokenizer
     train_collator = T5GNNMultipleChoiceDataCollator(
