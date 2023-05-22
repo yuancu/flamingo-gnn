@@ -11,8 +11,10 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 from transformers import AutoModelForSeq2SeqLM
 
-from dataset.lmgnn import load_data
+from dataset.lmgnn import load_data as load_lmgnn_data
+from dataset.mutiple_choice import load_data as load_multiple_choice_data
 from lightning.lit_t5 import LitT5
+from lightning.lit_multiple_choice import LitT5LMForMultipleChoice
 from utils.common import load_args
 
 def freeze_params(model, num_trainable_blocks):
@@ -46,6 +48,7 @@ def main(args):
     # 1. Load configs
     run_name = args.run_name
     num_trainable_blocks = args.num_trainable_blocks
+    multiple_choice = args.multiple_choice
     mode = 'finetune'
     config_profile = args.config_profile
     args = load_args(config_path=args.config, profile=args.config_profile)
@@ -56,35 +59,49 @@ def main(args):
     # with or without graph
     dummy_graph = True
     train_kwargs={'encoder_input': args.encoder_input, 'decoder_label': args.decoder_label}
-    if mode == 'pretrain':
-        val_decoder_label = args.decoder_label
+    train_kwargs={'encoder_input': args.encoder_input, 'decoder_label': args.decoder_label}
+    val_kwargs={'encoder_input': args.encoder_input, 'decoder_label': args.decoder_label}
+    if mode == 'finetune' and not multiple_choice:
+        val_kwargs['decoder_label'] = 'raw_answers'
+
+    if multiple_choice:
+        train_loader, val_loader = load_multiple_choice_data(
+            args,
+            corrupt=False,
+            dummy_graph=dummy_graph,
+            num_workers=8,
+            train_kwargs=train_kwargs,
+            val_kwargs=val_kwargs,
+            num_choices=args.num_choices,)
     else:
-        val_decoder_label = 'raw_answers'
-    val_kwargs={'encoder_input': args.encoder_input, 'decoder_label': val_decoder_label}
-    train_loader, val_loader = load_data(
-        args,
-        corrupt=False,
-        dummy_graph=dummy_graph,
-        num_workers=8,
-        train_kwargs=train_kwargs,
-        val_kwargs=val_kwargs,)
+        train_loader, val_loader = load_lmgnn_data(
+            args,
+            corrupt=False,
+            dummy_graph=dummy_graph,
+            num_workers=8,
+            train_kwargs=train_kwargs,
+            val_kwargs=val_kwargs,)
 
     # 3. Create encoder and decoder
     t5 = AutoModelForSeq2SeqLM.from_pretrained(args.encoder_name_or_path)
     freeze_params(t5, num_trainable_blocks)
 
     # 4. Create pytorch lightning model
-    model = LitT5(args, t5)
+    if multiple_choice:
+        model_cls = LitT5LMForMultipleChoice
+    else:
+        model_cls = LitT5
+    model = model_cls(args, t5)
 
     # 5. Create trainer
-    now = datetime.now().strftime('%d%H%M')
+    now = datetime.now().strftime('%m%d%H%M')
     run_name = f"{args.run_name}-{now}"
     offline = args.wandb_mode in ['offline', 'disabled']
     Path(args.log_dir).mkdir(parents=True, exist_ok=True)
     wandb_logger = WandbLogger(project=args.wandb_project, offline=offline, name=run_name,
                                group=config_profile, save_dir=args.log_dir)
     wandb_logger.experiment.config.update(vars(args))
-    if mode == 'finetune':
+    if mode == 'finetune' and not multiple_choice:
         checkpoint_callback = ModelCheckpoint(monitor="em", mode="max", save_weights_only=True,)
         callbacks = [checkpoint_callback]
     else:
@@ -118,5 +135,6 @@ if __name__ == '__main__':
     parser.add_argument('--config-profile', type=str, required=True)
     parser.add_argument('--run-name', type=str, required=True)
     parser.add_argument('--num-trainable-blocks', type=int, help='Number of trainable blocks in the decoder.')
+    parser.add_argument('--multiple-choice', action='store_true', help='Whether it is multiple choice task.')
     args = parser.parse_args()
     main(args)

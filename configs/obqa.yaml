@@ -141,7 +141,7 @@ finetune_obqa_pretrained_sanity: &finetune-obqa-pretrained-sanity
     log_interval: 4
     checkpoint_path: artifacts/pretrained/lit_obqa_t5s_e40.ckpt
 
-finetune_obqa:
+finetune_obqa: &finetune-obqa
   <<: *default
   data:
     <<: *data-default
@@ -154,23 +154,21 @@ finetune_obqa:
     max_seq_len: 512
     freeze_lm: True
     freeze_non_lm: False
+
+finetune_obqa_pretrained:
+  <<: *finetune-obqa
   misc:
     <<: *misc-default
     checkpoint_path: artifacts/pretrained/lit_obqa_t5b_e20.ckpt
 
+finetune_obqa_no_graph:
+  <<: *finetune-obqa
+  misc:
+    <<: *misc-default
+    no_graph: True
+
 finetune_obqa_pretrained_adapter:
-  <<: *default
-  data:
-    <<: *data-default
-    <<: *conceptnet
-    <<: *obqa
-  optim:
-    <<: *optim-default
-    learning_rate: 0.002
-    batch_size: 64
-    max_seq_len: 512
-    freeze_lm: True
-    freeze_non_lm: False
+  <<: *finetune-obqa
   misc:
     <<: *misc-default
     checkpoint_path: artifacts/pretrained/lit_obqa_t5b_e20_adapter.ckpt

@@ -14,7 +14,7 @@ from transformers.adapters import AdapterConfig
 from dataset.lmgnn import load_data as load_lmgnn_data
 from dataset.mutiple_choice import load_data as load_multiple_choice_data
 from lightning.lit_seq2seq import LitT5Seq2Seq
-from lightning.lit_multiple_choice import LitT5Seq2SeqForMultipleChoice
+from lightning.lit_multiple_choice import LitT5GNNForMultipleChoice
 from models.flamingo_t5 import FlamingoConfig, FlamingoT5Decoder
 from utils.common import load_args
 from utils.model_utils import construct_encoder
@@ -83,7 +83,7 @@ def main(args):
         decoder.lm.train_adapter(["bottleneck_adapter"])
 
     # 4. Create pytorch lightning model
-    model_cls = LitT5Seq2SeqForMultipleChoice if multiple_choice else LitT5Seq2Seq
+    model_cls = LitT5GNNForMultipleChoice if multiple_choice else LitT5Seq2Seq
     if args.checkpoint_path and not args.restore_training: # if restore, we don't need to load the checkpoint here
         model = model_cls.load_from_checkpoint(
             args.checkpoint_path, strict=False,
