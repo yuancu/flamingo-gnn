@@ -119,6 +119,9 @@ finetune_obqa_sanity: &finetune-obqa-sanity
     <<: *data-default
     <<: *conceptnet
     <<: *obqa-sanity
+  model:
+    <<: *model-default
+    encoder_name_or_path: t5-small
   optim:
     <<: *optim-default
     learning_rate: 0.005
@@ -128,6 +131,7 @@ finetune_obqa_sanity: &finetune-obqa-sanity
     freeze_non_lm: False
   misc:
     <<: *misc-default
+    fast_dev_run: False
     log_interval: 4
 
 finetune_obqa_pretrained_sanity: &finetune-obqa-pretrained-sanity
@@ -153,3 +157,20 @@ finetune_obqa:
   misc:
     <<: *misc-default
     checkpoint_path: artifacts/pretrained/lit_obqa_t5b_e20.ckpt
+
+finetune_obqa_pretrained_adapter:
+  <<: *default
+  data:
+    <<: *data-default
+    <<: *conceptnet
+    <<: *obqa
+  optim:
+    <<: *optim-default
+    learning_rate: 0.002
+    batch_size: 64
+    max_seq_len: 512
+    freeze_lm: True
+    freeze_non_lm: False
+  misc:
+    <<: *misc-default
+    checkpoint_path: artifacts/pretrained/lit_obqa_t5b_e20_adapter.ckpt

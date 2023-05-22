@@ -7,7 +7,7 @@ default: &default
     ie_dim: 200  # number of the hidden units of the MInt operator.
     ie_layer_num: 1  # number of hidden layers in the MInt operator
     cxt_node_connects_all: True  # Whether to connect the interaction node to all the retrieved KG nodes or only the linked nodes.
-    encoder_name_or_path: t5-small
+    encoder_name_or_path: t5-base
     xattn_dim_head: 64
     xattn_heads: 8
     xattn_every: 1
@@ -96,8 +96,8 @@ finetune_csqa: &finetune-csqa
   optim: &finetune-csqa-optim
     <<: *optim-default
     learning_rate: 0.001
-    batch_size: 64
-    max_seq_len: 512
+    batch_size: 48
+    max_seq_len: 128
     freeze_lm: True
     freeze_non_lm: False
   misc: &finetune-csqa-misc
@@ -119,4 +119,11 @@ finetune_csqa_sanity: &finetune-csqa-sanity
     freeze_non_lm: False
   misc:
     <<: *misc-default
+    fast_dev_run: True
     log_interval: 4
+
+finetune_csqa_pretrained_adapter:
+  <<: *finetune-csqa
+  misc:
+    <<: *misc-default
+    checkpoint_path: artifacts/pretrained/lit_obqa_t5b_e20_adapter.ckpt

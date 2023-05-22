@@ -9,6 +9,7 @@ import pytorch_lightning as pl
 import torch
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
+from transformers.adapters import AdapterConfig
 
 from dataset.lmgnn import load_data as load_lmgnn_data
 from dataset.mutiple_choice import load_data as load_multiple_choice_data
@@ -33,6 +34,7 @@ def main(args):
     mode = 'pretrain' if args.pretrain else 'finetune'
     config_profile = args.config_profile
     multiple_choice = args.multiple_choice
+    add_adapter = args.add_adapter
     args = load_args(config_path=args.config, profile=args.config_profile)
     args.run_name = run_name
 
@@ -75,6 +77,10 @@ def main(args):
         xattn_ff_mult=args.xattn_ff_mult,
         lm_name_or_path=args.encoder_name_or_path,)
     decoder = FlamingoT5Decoder(decoder_config, encoder.get_input_embeddings())
+    if add_adapter:
+        config = AdapterConfig(mh_adapter=True, output_adapter=True, reduction_factor=16, non_linearity="relu")
+        decoder.lm.add_adapter("bottleneck_adapter", config=config)
+        decoder.lm.train_adapter(["bottleneck_adapter"])
 
     # 4. Create pytorch lightning model
     model_cls = LitT5Seq2SeqForMultipleChoice if multiple_choice else LitT5Seq2Seq
@@ -138,6 +144,7 @@ if __name__ == '__main__':
     parser.add_argument('--pretrain', action='store_true')
     parser.add_argument('--finetune', action='store_true')
     parser.add_argument('--multiple-choice', action='store_true')
+    parser.add_argument('--add-adapter', action='store_true')
     args = parser.parse_args()
     if not args.pretrain ^ args.finetune:
         raise ValueError('Either pretrain or finetune should be set.')

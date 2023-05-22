@@ -96,13 +96,24 @@ class FlamingoDecoderBaseModel(ABC, PreTrainedModel):
 
     def freeze_lm(self):
         """Freeze weights of the language model.
+        It unfreeze modified layers and adapter layers.
         """
         for param in self.lm.parameters():
             param.requires_grad = False
 
+        n_xattn = 0
         for xattn in self.get_modified_layers():
             for param in xattn.xattn_block.parameters():
                 param.requires_grad = True
+                n_xattn += param.numel()
+        print(f'Number of unfrozen xattn parameters: {n_xattn}')
+
+        n_adapter = 0
+        for key, param in self.lm.named_parameters():
+            if 'adapter' in key:
+                param.requires_grad = True
+                n_adapter += param.numel()
+        print(f'Number of unfrozen adapter parameters: {n_adapter}')
 
     def unfreeze_lm(self):
         """Unfreeze all weights of the language model.

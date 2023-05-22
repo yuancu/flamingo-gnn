@@ -14,11 +14,13 @@ from torch.nn import CrossEntropyLoss
 from transformers import T5ForConditionalGeneration
 from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
 from transformers.models.t5.modeling_t5 import T5PreTrainedModel, T5Stack
+from transformers.adapters.mixins.t5 import T5ModelAdaptersMixin, T5ModelWithHeadsAdaptersMixin
+from transformers.adapters.context import ForwardContext
 
 logger = logging.getLogger(__name__)
 
 
-class T5ForCausalLM(T5PreTrainedModel):
+class T5ForCausalLM(T5ModelWithHeadsAdaptersMixin, T5ModelAdaptersMixin, T5PreTrainedModel):
     """Adapted from BartForCausalLM and T5ForConditionalGeneration v4.26.1"""
     _keys_to_ignore_on_load_missing = [
         r"decoder.embed_tokens.weight",
@@ -38,9 +40,20 @@ class T5ForCausalLM(T5PreTrainedModel):
         self.decoder = T5Stack(config, embed_tokens)
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
         self.config = config
+        self.model_dim = config.d_model
+
+        self._init_adapter_modules()
+
         self.post_init()
         self.init_weights()
 
+    def get_input_embeddings(self):
+        return self.shared
+
+    def get_output_embeddings(self):
+        return self.lm_head
+
+    @ForwardContext.wrap
     def forward(
             self,
             input_ids: torch.LongTensor = None,
@@ -73,6 +86,12 @@ class T5ForCausalLM(T5PreTrainedModel):
         )
 
         sequence_output = outputs[0]
+
+        if self.config.tie_word_embeddings:
+            # Rescale output before projecting on vocab
+            # See https://github.com/tensorflow/mesh/blob/fa19d69eafc9a482aff0b59ddd96b025c0cb207d/mesh_tensorflow/transformer/transformer.py#L586
+            sequence_output = sequence_output * (self.model_dim**-0.5)
+
         lm_logits = self.lm_head(sequence_output)
 
         if labels is not None:
