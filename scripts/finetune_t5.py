@@ -10,12 +10,24 @@ import torch
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 from transformers import AutoModelForSeq2SeqLM
+from transformers.adapters import LoRAConfig, PfeifferConfig, CompacterConfig
 
 from dataset.lmgnn import load_data as load_lmgnn_data
 from dataset.mutiple_choice import load_data as load_multiple_choice_data
 from lightning.lit_t5 import LitT5
 from lightning.lit_multiple_choice import LitT5LMForMultipleChoice
 from utils.common import load_args
+
+
+def get_adapter_config(adapter_name):
+    assert adapter_name in ['lora', 'pfeiffer', 'compacter']
+    if adapter_name == 'pfeiffer':
+        config = PfeifferConfig()
+    elif adapter_name == 'lora':
+        config = LoRAConfig()
+    elif adapter_name == 'compacter':
+        config = CompacterConfig()
+    return config
 
 def freeze_params(model, num_trainable_blocks):
     """Freeze all the parameters except the last num_trainable_blocks 
@@ -55,6 +67,9 @@ def main(args):
     num_trainable_blocks = args.num_trainable_blocks
     multiple_choice = args.multiple_choice
     inject_choice = args.inject_choice
+    adapter_name = args.adapter
+    devices = args.devices
+    fp16 = args.fp16
     mode = 'finetune'
     config_profile = args.config_profile
     args = load_args(config_path=args.config, profile=args.config_profile)
@@ -92,6 +107,10 @@ def main(args):
     # 3. Create encoder and decoder
     t5 = AutoModelForSeq2SeqLM.from_pretrained(args.encoder_name_or_path)
     freeze_params(t5, num_trainable_blocks)
+    if adapter_name is not None:
+        config = get_adapter_config(adapter_name)
+        t5.add_adapter("adapter", config=config)
+        t5.train_adapter("adapter")
 
     # 4. Create pytorch lightning model
     if multiple_choice:
@@ -107,17 +126,20 @@ def main(args):
     Path(args.log_dir).mkdir(parents=True, exist_ok=True)
     wandb_logger = WandbLogger(project=args.wandb_project, offline=offline, name=run_name,
                                group=config_profile, save_dir=args.log_dir)
-    wandb_logger.experiment.config.update(vars(args))
+    # wandb_logger.experiment.config.update(vars(args))
     if mode == 'finetune' and not multiple_choice:
         checkpoint_callback = ModelCheckpoint(monitor="em", mode="max", save_weights_only=True,)
         callbacks = [checkpoint_callback]
     else:
         callbacks = None
+    optional_kwargs = {}
+    if fp16:
+        optional_kwargs['precision'] = 16
     trainer = pl.Trainer(max_epochs=args.n_epochs, fast_dev_run=args.fast_dev_run,
                          default_root_dir=os.path.join(args.save_dir, args.run_name),
                          accelerator='gpu', strategy=args.strategy, logger=wandb_logger,
                          callbacks=callbacks, gradient_clip_val=0.5,
-                         accumulate_grad_batches=8)
+                         accumulate_grad_batches=8, devices=devices, **optional_kwargs)
 
     # 6. Train
     if args.restore_training:
@@ -144,5 +166,8 @@ if __name__ == '__main__':
     parser.add_argument('--num-trainable-blocks', type=int, help='Number of trainable blocks in the decoder.')
     parser.add_argument('--multiple-choice', action='store_true', help='Whether it is multiple choice task.')
     parser.add_argument('--inject-choice', action='store_true', help='Whether to inject choice into the input.')
+    parser.add_argument('--adapter', default=None, help='Whether to add adapter to the model. No adapter if not set.')
+    parser.add_argument('--devices', type=int, default=1, help='Number of devices to use.')
+    parser.add_argument('--fp16', action='store_true', help='Whether to use fp16.')
     args = parser.parse_args()
     main(args)

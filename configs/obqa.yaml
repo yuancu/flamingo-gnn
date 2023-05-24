@@ -149,7 +149,7 @@ finetune_obqa: &finetune-obqa
     <<: *obqa
   optim:
     <<: *optim-default
-    learning_rate: 0.002
+    learning_rate: 0.0005
     batch_size: 64
     max_seq_len: 512
     freeze_lm: True
@@ -172,3 +172,34 @@ finetune_obqa_pretrained_adapter:
   misc:
     <<: *misc-default
     checkpoint_path: artifacts/pretrained/lit_obqa_t5b_e20_adapter.ckpt
+
+finetune_obqa_11b_adapter:
+  <<: *finetune-obqa
+  model:
+    <<: *model-default
+    encoder_name_or_path: t5-11b
+  optim:
+    <<: *optim-default
+    learning_rate: 0.0005
+    batch_size: 8
+    max_seq_len: 64
+    freeze_lm: True
+    freeze_non_lm: False
+    strategy: deepspeed_stage_3_offload
+    optimizer: deepspeed_offload
+  misc:
+    <<: *misc-default
+    log_interval: 4
+
+finetune_obqa_unfrozen:
+  <<: *finetune-obqa
+  optim:
+    <<: *optim-default
+    learning_rate: 0.0005
+    batch_size: 48
+    max_seq_len: 64
+    freeze_lm: False
+    freeze_non_lm: False
+  misc:
+    <<: *misc-default
+    checkpoint_path: artifacts/pretrained/lit_obqa_t5b_e20.ckpt
