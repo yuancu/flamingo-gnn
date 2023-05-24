@@ -25,4 +25,4 @@ python -c "import torch_geometric; print('torch_geometric version:', torch_geome
 export TOKENIZERS_PARALLELISM=true
 
 # run pretrain
-python -u train.py --finetune --config configs/lmgnn.yaml --config-profile finetune_squad_t5 --run-name ftt5
+python -u train.py --finetune --config configs/squad.yaml --config-profile finetune_squad_t5 --run-name ftt5

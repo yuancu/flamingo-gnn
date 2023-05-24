@@ -35,6 +35,7 @@ def main(args):
     config_profile = args.config_profile
     multiple_choice = args.multiple_choice
     add_adapter = args.add_adapter
+    devices = args.devices
     args = load_args(config_path=args.config, profile=args.config_profile)
     args.run_name = run_name
 
@@ -117,7 +118,7 @@ def main(args):
                          default_root_dir=os.path.join(args.save_dir, args.run_name),
                          accelerator='gpu', strategy=args.strategy, logger=wandb_logger,
                          callbacks=callbacks, gradient_clip_val=0.5,
-                         accumulate_grad_batches=8)
+                         accumulate_grad_batches=8, devices=devices)
 
     # 6. Train
     if args.restore_training:
@@ -145,6 +146,7 @@ if __name__ == '__main__':
     parser.add_argument('--finetune', action='store_true')
     parser.add_argument('--multiple-choice', action='store_true')
     parser.add_argument('--add-adapter', action='store_true')
+    parser.add_argument('--devices', type=int, default=1)
     args = parser.parse_args()
     if not args.pretrain ^ args.finetune:
         raise ValueError('Either pretrain or finetune should be set.')

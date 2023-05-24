@@ -27,4 +27,4 @@ export TOKENIZERS_PARALLELISM=true
 export WANDB__SERVICE_WAIT=300
 
 # run pretrain
-python -u train.py --finetune --config configs/lmgnn.yaml --config-profile finetune_mintaka_no_graph_pretrained --run-name ftmtngptd
+python -u train.py --finetune --config configs/mintaka.yaml --config-profile finetune_mintaka_no_graph_pretrained --run-name ftmtngptd

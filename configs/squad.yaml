@@ -1,0 +1,185 @@
+default: &default
+  model: &model-default
+    k: 5  # The number of GNN layers
+    att_head_num: 2  # number of attention heads of the final graph nodes' pooling
+    gnn_dim: 100  # dimension of the GNN layers
+    freeze_ent_emb: True  # Whether to freeze the entity embedding layer.
+    ie_dim: 200  # number of the hidden units of the MInt operator.
+    ie_layer_num: 1  # number of hidden layers in the MInt operator
+    cxt_node_connects_all: True  # Whether to connect the interaction node to all the retrieved KG nodes or only the linked nodes.
+    encoder_name_or_path: t5-base
+    xattn_dim_head: 64
+    xattn_heads: 8
+    xattn_every: 1
+    xattn_ff_mult: 4
+  data: &data-default
+    kg_only_use_qa_nodes: False
+    max_node_num: 200  # Max number of nodes / the threshold used to prune nodes.
+    num_dataloader_workers: 8
+    mlm_probability: 0.2
+    encoder_input: contextualized_question
+    decoder_label: answer
+  optim: &optim-default
+    # Optimization
+    loss: cross_entropy  # model type
+    optimizer: adamw  # the optimizer
+    batch_size: 256
+    max_grad_norm: 1.0  # max grad norm (0 to disable)
+    n_epochs: 100  # total number of training epochs to perform.
+    eval_batch_size: 64
+    init_range: 0.02  # stddev when initializing with normal distribution
+    redef_epoch_steps: -1
+    # Regularization:
+    dropouti: 0.2  # dropout for embedding layer
+    dropoutg: 0.2  # dropout for GNN layers
+    dropoutf: 0.2  # dropout for fully-connected layers
+    # Customized
+    fp16: True
+    dist_backend: nccl # gloo, nccl or mpi
+    batch_size: 128
+    learning_rate: 0.001
+    freeze_lm: True
+    freeze_non_lm: False
+    max_seq_len: 512
+    strategy: auto
+  misc: &misc-default
+    mode: train  # run training or evaluation
+    save_dir: ./saved_models/  # model output directory
+    save_model: 2  # 0: do not save model checkpoints. 1: save if best dev. 2: save always
+    checkpoint_path:  # The checkpoint for finetuning, or to resume training from if restore_training is set
+    restore_training: False  # Whether to restore training from the checkpoint
+    # added
+    wandb_mode: online # online, offline or disabled
+    wandb_project: flamingo-gnn
+    world_size: 1
+    fast_dev_run: False
+    log_interval: 20
+    run_name:
+    save_interval: 5
+    log_dir: logs
+    retrieve_text: False
+    prefix_ratio: 0.2
+    monitor: em
+    monitor_mode: max
+
+# Data
+
+wikidata5m: &wikidata5m
+  kg: wikidata5m
+  num_relations: 828  # number of relations for wikidata5m
+  ent_emb_paths: data/wikidata5m/entity_embeddings.npy
+
+
+squad2_pretrain: &squad2-pretrain
+  dataset: squad2
+  train_statements: data/squad2/statement/pt.train.statement.jsonl
+  train_adj: data/squad2/adj_data/pt.noext_train
+  dev_statements: data/squad2/statement/pt.dev.statement.jsonl
+  dev_adj: data/squad2/adj_data/pt.noext_dev
+  test_statements: data/squad2/statement/pt.dev.statement.jsonl
+  test_adj: data/squad2/adj_data/pt.noext_dev
+  legacy_adj: False
+
+squad_pretrain: &squad-pretrain
+  dataset: squad
+  train_statements: data/squad/statement/pt.train.statement.jsonl
+  train_adj: data/squad/adj/pt_train
+  dev_statements: data/squad/statement/pt.validation.statement.jsonl
+  dev_adj: data/squad/adj/pt_validation
+  legacy_adj: False
+
+squad_finetune: &squad-finetune
+  dataset: squad
+  train_statements: data/squad/statement/ft.train.statement.jsonl
+  train_adj: data/squad/adj/ft_train
+  dev_statements: data/squad/statement/ft.validation.statement.jsonl
+  dev_adj: data/squad/adj/ft_validation
+  legacy_adj: False
+
+# Specific Configs
+
+# TODO: Config the text data loader to load context or question conditionally
+pretrain_squad: &pretrain-squad
+  <<: *default
+  data: &pretrain-squad-data
+    <<: *data-default
+    <<: *wikidata5m
+    <<: *squad-pretrain
+  optim: &pretrain-squad-optim
+    <<: *optim-default
+    learning_rate: 0.0001
+    batch_size: 32
+    max_seq_len: 512
+  misc: &pretrain-squad-misc
+    <<: *misc-default
+    wandb_project: flamingo-gnn
+    world_size: 1
+    fast_dev_run: False
+    log_interval: 20
+
+pretrain_squad_no_graph: &pretrain-squad-no-graph
+  <<: *pretrain-squad
+  misc: &pretrain-squad-no-graph-misc
+    <<: *pretrain-squad-misc
+    no_graph: True
+    fast_dev_run: False
+  optim:
+    <<: *pretrain-squad-optim
+    batch_size: 32
+
+finetune_squad: &finetune-squad
+  <<: *pretrain-squad
+  data: &finetune-squad-data
+    <<: *pretrain-squad-data
+    <<: *squad-finetune
+    max_node_num: 10
+  optim: &finetune-squad-optim
+    <<: *pretrain-squad-optim
+    n_epochs: 100
+    batch_size: 96
+    max_seq_len: 256
+  misc: &finetune-squad-misc
+    <<: *pretrain-squad-misc
+    load_model_path:
+    fast_dev_run: False
+    no_graph: False
+    wandb_mode: offline
+
+# to reproduce t5 results on squad
+finetune_squad_t5:
+  <<: *finetune-squad
+  optim:
+    <<: *finetune-squad-optim
+    freeze_lm: False
+    freeze_non_lm: True
+    optimizer: adafactor
+    learning_rate: 0.001
+    max_seq_len: 512
+    batch_size: 32
+
+finetune_squad_no_graph:
+  <<: *pretrain-squad-no-graph
+  data:
+    <<: *pretrain-squad-data
+  optim:
+    <<: *pretrain-squad-optim
+    max_seq_len: 64
+    batch_size: 128
+    n_epochs: 60
+  misc:
+    <<: *pretrain-squad-no-graph-misc
+    no_graph: True
+    fast_dev_run: False
+
+finetune_squad_retrieval:
+  <<: *finetune-squad
+  data:
+    <<: *finetune-squad-data
+  optim:
+    <<: *finetune-squad-optim
+    max_seq_len: 512
+    n_epochs: 30
+    batch_size: 48
+  misc:
+    <<: *finetune-squad-misc
+    retrieve_text: True
