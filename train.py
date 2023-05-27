@@ -15,7 +15,7 @@ from dataset.lmgnn import load_data as load_lmgnn_data
 from dataset.multiple_choice import load_data as load_multiple_choice_data
 from lightning.lit_seq2seq import LitT5Seq2Seq
 from lightning.lit_multiple_choice import LitT5Seq2SeqForMultipleChoice
-from models.flamingo_t5 import FlamingoConfig, FlamingoT5Decoder
+from models.t5 import FlamingoConfig, FlamingoT5Decoder
 from utils.common import load_args
 from utils.model_utils import construct_encoder
 
@@ -56,7 +56,8 @@ def main(args):
             num_workers=8,
             train_kwargs=train_kwargs,
             val_kwargs=val_kwargs,
-            num_choices=args.num_choices,)
+            num_choices=args.num_choices,
+            has_choice_graph=args.has_choice_graph,)
     else:
         train_loader, val_loader = load_lmgnn_data(
             args,

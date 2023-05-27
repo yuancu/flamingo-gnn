@@ -7,7 +7,7 @@ from transformers import AutoTokenizer
 from transformers.optimization import Adafactor
 from deepspeed.ops.adam import DeepSpeedCPUAdam
 
-from models.t5_seq2seq import T5Seq2Seq
+from models.t5 import T5Seq2Seq
 
 
 class LitT5Seq2SeqForMultipleChoice(pl.LightningModule):

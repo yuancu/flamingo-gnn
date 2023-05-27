@@ -19,6 +19,7 @@ default: &default
     mlm_probability: 0.2
     encoder_input: contextualized_question
     decoder_label: answer
+    has_choice_graph: False  # does each choice has a subgraph?
   optim: &optim-default
     # Optimization
     loss: cross_entropy  # model type
@@ -100,7 +101,7 @@ finetune_mcwq: &finetune-mcwq
     decoder_label: answer
   optim:
     <<: *optim-default
-    max_seq_len: 64
+    max_seq_len: 32
     batch_size: 192
     eval_batch_size: 128
     freeze_lm: True

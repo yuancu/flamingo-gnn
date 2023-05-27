@@ -127,6 +127,7 @@ pretrain_wikitop: &pretrain-wikitop
     encoder_input: context_prefix
     decoder_label: context_suffix
     max_node_num: 30
+    has_choice_graph: False  # does each choice has a subgraph?
   optim: &pretrain-wikitop-optim
     <<: *optim-default
     max_seq_len: 312

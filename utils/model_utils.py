@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 
-from models.t5_lmgnn import T5GNNConfig, T5GNNEncoder
+from models.t5 import T5GNNConfig, T5GNNEncoder
 
 
 # Utils for the encoder

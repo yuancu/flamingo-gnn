@@ -51,7 +51,7 @@ class LMGNNChoiceDataset(Dataset):
                  model_name='t5-base', max_node_num=200, cxt_node_connects_all=True,
                  kg_only_use_qa_nodes=False, truncation_side='right',
                  encoder_input='question', decoder_label='answer', prefix_ratio=0.2,
-                 num_choices=4, has_choice_graph=True):
+                 num_choices=4, has_choice_graph=False):
         """
         Valid pairs of encoder_input and decoder_label:
         - Pretraining (Denoise): encoder_input = 'context', decoder_label = 'context'
@@ -682,7 +682,7 @@ class T5GNNMultipleChoiceDataCollator:
             edge_index, edge_type
 
 
-def load_data(args, corrupt=False, dummy_graph=False, num_workers=1, num_choices=5,
+def load_data(args, corrupt=False, dummy_graph=False, num_workers=1, num_choices=5, has_choice_graph=False,
               train_kwargs={'encoder_input': 'contextualized_question', 'decoder_label': 'answer'},
               val_kwargs={'encoder_input': 'contextualized_question', 'decoder_label': 'raw_answers'}):
     """Construct the dataset and return dataloaders
@@ -707,6 +707,7 @@ def load_data(args, corrupt=False, dummy_graph=False, num_workers=1, num_choices
         model_name=model_name,
         max_seq_length=max_seq_length,
         prefix_ratio=prefix_ratio,
+        has_choice_graph=has_choice_graph,
         **train_kwargs)
     validation_dataset = LMGNNChoiceDataset(
         statement_path=args.dev_statements,
@@ -715,6 +716,7 @@ def load_data(args, corrupt=False, dummy_graph=False, num_workers=1, num_choices
         model_name=model_name,
         max_seq_length=max_seq_length,
         prefix_ratio=prefix_ratio,
+        has_choice_graph=has_choice_graph,
         **val_kwargs)
     # get tokenizer
     train_collator = T5GNNMultipleChoiceDataCollator(

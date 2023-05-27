@@ -19,6 +19,7 @@ default: &default
     mlm_probability: 0.2
     encoder_input: question
     decoder_label: choices
+    has_choice_graph: False
   optim: &optim-default
     # Optimization
     loss: cross_entropy  # model type
@@ -92,6 +93,7 @@ obqa: &obqa
   dev_statements: data/obqa/statement/dev.statement.jsonl
   dev_adj: data/obqa/adj_multiple/dev
   num_choices: 4
+  has_choice_graph: True
 
 pretrain_obqa: &pretrain-obqa
   <<: *default

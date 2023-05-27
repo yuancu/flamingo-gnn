@@ -13,8 +13,8 @@ from transformers import PreTrainedModel, PretrainedConfig
 from transformers.modeling_outputs import BaseModelOutputWithPastAndCrossAttentions
 from transformers.models.t5.modeling_t5 import T5EncoderModel
 
-from .gnn import GATConvE,  make_one_hot
-from .gated_xattn import MaskedCrossAttention
+from ..gnn import GATConvE,  make_one_hot
+from ..gated_xattn import MaskedCrossAttention
 from utils.layers import MLP, CustomizedEmbedding
 
 logger = logging.getLogger(__name__)

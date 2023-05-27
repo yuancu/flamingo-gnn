@@ -5,9 +5,7 @@ import pytest
 import torch
 
 from dataset.lmgnn import load_data
-from models.flamingo_t5 import FlamingoConfig, FlamingoT5Decoder
-from models.t5_lmgnn import T5GNNConfig, T5GNNEncoder
-from models.t5_seq2seq import T5Seq2Seq
+from models.t5 import FlamingoConfig, FlamingoT5Decoder, T5GNNConfig, T5GNNEncoder, T5Seq2Seq
 from utils.common import load_args
 from utils.model_utils import get_tweaked_num_relations
 
@@ -16,7 +14,7 @@ DUMMY_BATCH_PATH = 'tests/dummy_batch.pkl'
 
 @pytest.fixture
 def args():
-    args = load_args(profile='test')
+    args = load_args(config_path='configs/mcwq.yaml', profile='test')
     args.batch_size = 2
     args.encoder_name_or_path = 't5-small'
     args.k = 2  # gnn layerss

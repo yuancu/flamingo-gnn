@@ -19,6 +19,7 @@ default: &default
     mlm_probability: 0.2
     encoder_input: contextualized_question
     decoder_label: answer
+    has_choice_graph: False  # does each choice has a subgraph?
   optim: &optim-default
     # Optimization
     loss: cross_entropy  # model type

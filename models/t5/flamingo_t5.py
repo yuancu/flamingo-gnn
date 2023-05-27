@@ -13,7 +13,7 @@ from torch import nn
 from transformers import PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
 
-from .gated_xattn import HijackedLMBlock
+from ..gated_xattn import HijackedLMBlock
 from .t5_decoder import T5ForCausalLM
 
 
