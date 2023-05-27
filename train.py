@@ -12,7 +12,7 @@ from pytorch_lightning.loggers import WandbLogger
 from transformers.adapters import AdapterConfig
 
 from dataset.lmgnn import load_data as load_lmgnn_data
-from dataset.mutiple_choice import load_data as load_multiple_choice_data
+from dataset.multiple_choice import load_data as load_multiple_choice_data
 from lightning.lit_seq2seq import LitT5Seq2Seq
 from lightning.lit_multiple_choice import LitT5Seq2SeqForMultipleChoice
 from models.flamingo_t5 import FlamingoConfig, FlamingoT5Decoder
@@ -119,6 +119,15 @@ def main(args):
                          accelerator='gpu', strategy=args.strategy, logger=wandb_logger,
                          callbacks=callbacks, gradient_clip_val=0.5,
                          accumulate_grad_batches=8, devices=devices)
+
+    # sanity check
+    if add_adapter:
+        adapter_added = False
+        for name, _ in model.named_parameters():
+            if "adapter" in name:
+                adapter_added = True
+                break
+        assert adapter_added, "Adapter is not added to the model."
 
     # 6. Train
     if args.restore_training:

@@ -88,9 +88,9 @@ obqa_sanity: &obqa-sanity
 obqa: &obqa
   dataset: obqa
   train_statements: data/obqa/statement/train.statement.jsonl
-  train_adj: data/obqa/adj/train
+  train_adj: data/obqa/adj_multiple/train
   dev_statements: data/obqa/statement/dev.statement.jsonl
-  dev_adj: data/obqa/adj/dev
+  dev_adj: data/obqa/adj_multiple/dev
   num_choices: 4
 
 pretrain_obqa: &pretrain-obqa
@@ -158,7 +158,7 @@ finetune_obqa:
     <<: *misc-default
     checkpoint_path: artifacts/pretrained/lit_obqa_t5b_e20.ckpt
 
-finetune_obqa_pretrained_adapter:
+finetune_obqa_pretrained_adapter: &finetune-obqa-pretrained-adapter
   <<: *default
   data:
     <<: *data-default
@@ -171,6 +171,16 @@ finetune_obqa_pretrained_adapter:
     max_seq_len: 512
     freeze_lm: True
     freeze_non_lm: False
+    n_epochs: 200
   misc:
     <<: *misc-default
     checkpoint_path: artifacts/pretrained/lit_obqa_t5b_e20_adapter.ckpt
+
+
+finetune_obqa_with_fact:
+  <<: *finetune-obqa-pretrained-adapter
+  data:
+    <<: *data-default
+    <<: *conceptnet
+    <<: *obqa
+    encoder_input: contextualized_question
