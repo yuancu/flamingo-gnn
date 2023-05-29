@@ -15,7 +15,8 @@ from dataset.lmgnn import load_data as load_lmgnn_data
 from dataset.multiple_choice import load_data as load_multiple_choice_data
 from lightning.lit_seq2seq import LitT5Seq2Seq
 from lightning.lit_multiple_choice import LitT5Seq2SeqForMultipleChoice
-from models.t5 import FlamingoConfig, FlamingoT5Decoder
+from models.flamingo import FlamingoConfig
+from models.t5 import FlamingoT5Decoder
 from utils.common import load_args
 from utils.model_utils import construct_encoder
 

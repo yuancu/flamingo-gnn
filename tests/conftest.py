@@ -5,7 +5,8 @@ import pytest
 import torch
 
 from dataset.lmgnn import load_data
-from models.t5 import FlamingoConfig, FlamingoT5Decoder, T5GNNConfig, T5GNNEncoder, T5Seq2Seq
+from models.flamingo import FlamingoConfig
+from models.t5 import FlamingoT5Decoder, T5GNNConfig, T5GNNEncoder, T5Seq2Seq
 from utils.common import load_args
 from utils.model_utils import get_tweaked_num_relations
 
