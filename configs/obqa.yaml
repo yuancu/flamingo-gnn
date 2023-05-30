@@ -19,6 +19,7 @@ default: &default
     mlm_probability: 0.2
     encoder_input: question
     decoder_label: choices
+    has_choice_graph: False
   optim: &optim-default
     # Optimization
     loss: cross_entropy  # model type
@@ -88,10 +89,20 @@ obqa_sanity: &obqa-sanity
 obqa: &obqa
   dataset: obqa
   train_statements: data/obqa/statement/train.statement.jsonl
-  train_adj: data/obqa/adj/train
+  train_adj: data/obqa/adj_multiple/train
   dev_statements: data/obqa/statement/dev.statement.jsonl
-  dev_adj: data/obqa/adj/dev
+  dev_adj: data/obqa/adj_multiple/dev
   num_choices: 4
+  has_choice_graph: True
+
+obqa_single: &obqa-single
+  dataset: obqa
+  train_statements: data/obqa/statement/train.statement.jsonl
+  train_adj: data/obqa/adj_multiple/train
+  dev_statements: data/obqa/statement/dev.statement.jsonl
+  dev_adj: data/obqa/adj_multiple/dev
+  num_choices: 4
+  has_choice_graph: True
 
 pretrain_obqa: &pretrain-obqa
   <<: *default
@@ -161,13 +172,13 @@ finetune_obqa_pretrained:
     <<: *misc-default
     checkpoint_path: artifacts/pretrained/lit_obqa_t5b_e20.ckpt
 
-finetune_obqa_no_graph:
+finetune_obqa_no_graph: &finetune-obqa-no-graph
   <<: *finetune-obqa
   misc:
     <<: *misc-default
     no_graph: True
 
-finetune_obqa_pretrained_adapter:
+finetune_obqa_pretrained_adapter: &finetune-obqa-pretrained-adapter
   <<: *finetune-obqa
   misc:
     <<: *misc-default
@@ -203,3 +214,20 @@ finetune_obqa_unfrozen:
   misc:
     <<: *misc-default
     checkpoint_path: artifacts/pretrained/lit_obqa_t5b_e20.ckpt
+    n_epochs: 100
+
+finetune_obqa_with_fact:
+  <<: *finetune-obqa-pretrained-adapter
+  data:
+    <<: *data-default
+    <<: *conceptnet
+    <<: *obqa
+    encoder_input: contextualized_question
+
+finetune_obqa_lmonly_with_fact:
+  <<: *finetune-obqa-no-graph
+  data:
+    <<: *data-default
+    <<: *conceptnet
+    <<: *obqa
+    encoder_input: contextualized_question

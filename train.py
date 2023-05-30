@@ -12,10 +12,11 @@ from pytorch_lightning.loggers import WandbLogger
 from transformers.adapters import AdapterConfig
 
 from dataset.lmgnn import load_data as load_lmgnn_data
-from dataset.mutiple_choice import load_data as load_multiple_choice_data
+from dataset.multiple_choice import load_data as load_multiple_choice_data
 from lightning.lit_seq2seq import LitT5Seq2Seq
 from lightning.lit_multiple_choice import LitT5GNNForMultipleChoice
-from models.flamingo_t5 import FlamingoConfig, FlamingoT5Decoder
+from models.flamingo import FlamingoConfig
+from models.t5 import FlamingoT5Decoder
 from utils.common import load_args
 from utils.model_utils import construct_encoder
 
@@ -35,6 +36,7 @@ def main(args):
     config_profile = args.config_profile
     multiple_choice = args.multiple_choice
     add_adapter = args.add_adapter
+    devices = args.devices
     args = load_args(config_path=args.config, profile=args.config_profile)
     args.run_name = run_name
 
@@ -55,7 +57,8 @@ def main(args):
             num_workers=8,
             train_kwargs=train_kwargs,
             val_kwargs=val_kwargs,
-            num_choices=args.num_choices,)
+            num_choices=args.num_choices,
+            has_choice_graph=args.has_choice_graph,)
     else:
         train_loader, val_loader = load_lmgnn_data(
             args,
@@ -117,7 +120,16 @@ def main(args):
                          default_root_dir=os.path.join(args.save_dir, args.run_name),
                          accelerator='gpu', strategy=args.strategy, logger=wandb_logger,
                          callbacks=callbacks, gradient_clip_val=0.5,
-                         accumulate_grad_batches=8)
+                         accumulate_grad_batches=8, devices=devices)
+
+    # sanity check
+    if add_adapter:
+        adapter_added = False
+        for name, _ in model.named_parameters():
+            if "adapter" in name:
+                adapter_added = True
+                break
+        assert adapter_added, "Adapter is not added to the model."
 
     # 6. Train
     if args.restore_training:
@@ -145,6 +157,7 @@ if __name__ == '__main__':
     parser.add_argument('--finetune', action='store_true')
     parser.add_argument('--multiple-choice', action='store_true')
     parser.add_argument('--add-adapter', action='store_true')
+    parser.add_argument('--devices', type=int, default=1)
     args = parser.parse_args()
     if not args.pretrain ^ args.finetune:
         raise ValueError('Either pretrain or finetune should be set.')

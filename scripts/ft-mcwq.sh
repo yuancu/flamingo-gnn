@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Finetune on Multilingual Complex Wikidata Questionsn with dummy graph
+# Finetune on Multilingual Complex Wikidata Questions
 #
-#SBATCH --job-name ftcwqng
+#SBATCH --job-name ftcwq
 #SBATCH --output=runs/R-%x.%j.out
 #SBATCH --ntasks=1
 #SBATCH --time=24:00:00
@@ -23,6 +23,7 @@ python -c "import torch; print('device_count:', torch.cuda.device_count())"
 python -c "import torch_geometric; print('torch_geometric version:', torch_geometric.__version__)"
 
 export TOKENIZERS_PARALLELISM=true
+export WANDB__SERVICE_WAIT=300
 
 # run pretrain
-python -u train.py --finetune --config configs/lmgnn.yaml --config-profile finetune_mcwq_no_graph --run-name ftcwqng
+python -u train.py --finetune --config configs/mcwq.yaml --config-profile finetune_mcwq --run-name ftcwqpre0

@@ -26,4 +26,4 @@ export BACKBONE_MODEL=t5
 export TOKENIZERS_PARALLELISM=true
 
 # run pretrain
-python  train.py --pretrain --config configs/lmgnn.yaml --config-profile pretrain_wiki --run-name ptwk
+python  train.py --pretrain --config configs/pretrain.yaml --config-profile pretrain_wiki --run-name ptwk

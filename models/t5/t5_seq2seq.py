@@ -4,9 +4,7 @@ the EncoderDecoderModel in transformers. The forward pass is different from the
 original implementation, as the encoder returns entity embeddings apart from the
 text token embeddings.
 """
-
-from dataclasses import dataclass
-from typing import Optional, Tuple, Union, List
+from typing import Optional, Tuple
 import torch
 from torch.nn import CrossEntropyLoss
 from transformers import EncoderDecoderModel

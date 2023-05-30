@@ -25,4 +25,4 @@ python -c "import torch_geometric; print('torch_geometric version:', torch_geome
 export TOKENIZERS_PARALLELISM=true
 
 # run pretrain
-python -u train.py --finetune --config configs/lmgnn.yaml --config-profile finetune_mcwq_no_graph_pretrained --run-name ftcwqngptd
+python -u train.py --finetune --config configs/mcwq.yaml --config-profile finetune_mcwq_no_graph_pretrained --run-name ftcwqngptd

@@ -17,9 +17,8 @@ default: &default
     max_node_num: 200  # Max number of nodes / the threshold used to prune nodes.
     num_dataloader_workers: 8
     mlm_probability: 0.2
-    encoder_input: question
-    decoder_label: choices
-    has_choice_graph: False  # does each choice has a subgraph?
+    encoder_input: contextualized_question
+    decoder_label: answer
   optim: &optim-default
     # Optimization
     loss: cross_entropy  # model type
@@ -38,7 +37,7 @@ default: &default
     fp16: True
     dist_backend: nccl # gloo, nccl or mpi
     batch_size: 128
-    learning_rate: 0.0001
+    learning_rate: 0.001
     freeze_lm: True
     freeze_non_lm: False
     max_seq_len: 512
@@ -51,7 +50,7 @@ default: &default
     restore_training: False  # Whether to restore training from the checkpoint
     # added
     wandb_mode: online # online, offline or disabled
-    wandb_project: commensense
+    wandb_project: mcwq
     world_size: 1
     fast_dev_run: False
     log_interval: 20
@@ -60,71 +59,103 @@ default: &default
     log_dir: logs
     retrieve_text: False
     prefix_ratio: 0.2
-    monitor: accuracy
+    monitor: em
     monitor_mode: max
 
 
-conceptnet: &conceptnet
-  kg: conceptnet
-  num_relations: 17
-  ent_emb_paths: data/cpnet/tzw.ent.npy
+wikidata5m: &wikidata5m
+  kg: wikidata5m
+  num_relations: 828  # number of relations for wikidata5m
+  ent_emb_paths: data/wikidata5m/entity_embeddings.npy
+
+# Emebedded with T5-base encoder
+wikidata5m_langemb: &wikidata5m-langemb
+  kg: wikidata5m
+  num_relations: 828  # number of relations for wikidata5m
+  ent_emb_paths: data/wikidata5m/entity_embeddings_t5_base.npy
 
 
-csqa: &csqa
-  dataset: csqa
-  train_statements: data/csqa/statement/train.statement.jsonl
-  train_adj: data/csqa/adj/train
-  dev_statements: data/csqa/statement/dev.statement.jsonl
-  dev_adj: data/csqa/adj/dev
+# Wikidataset for pretrain (made from the cross links on Wikipedia)
+wiki_pretrain: &wiki-pretrain
+  dataset: wiki
+  train_statements: data/kilt/statement/train.statement.jsonl
+  train_adj: data/kilt/adj_data/train
+  dev_statements: data/kilt/statement/dev.statement.jsonl
+  dev_adj: data/kilt/adj_data/dev
+  test_statements: data/kilt/statement/test.statement.jsonl
+  test_adj: data/kilt/adj_data/test
   legacy_adj: False
-  num_choices: 5
 
-csqa_sanity: &csqa-sanity
-  dataset: csqa
-  train_statements: data/csqa_sanity/statment/train.statement.jsonl
-  train_adj: data/csqa_sanity/adj/train
-  dev_statements: data/csqa_sanity/statment/train.statement.jsonl
-  dev_adj: data/csqa_sanity/adj/train
-  num_choices: 5
+wikitop_pretrain: &wikitop-pretrain
+  dataset: wikitop
+  train_statements: data/wikitop/statement/train.statement.jsonl
+  train_adj: data/wikitop/adj_data/train
+  dev_statements: data/wikitop/statement/test.statement.jsonl
+  dev_adj: data/wikitop/adj_data/test
+  legacy_adj: False
 
-
-finetune_csqa: &finetune-csqa
+pretrain_wiki:
   <<: *default
   data:
     <<: *data-default
-    <<: *conceptnet
-    <<: *csqa
-  optim: &finetune-csqa-optim
+    <<: *wikidata5m
+    <<: *wiki-pretrain 
+    encoder_input: context_prefix
+    decoder_label: context_suffix
+    max_node_num: 30
+  optim:
     <<: *optim-default
-    learning_rate: 0.001
-    batch_size: 48
-    max_seq_len: 128
+    max_seq_len: 512
+    batch_size: 24
     freeze_lm: True
     freeze_non_lm: False
-  misc: &finetune-csqa-misc
+  misc:
     <<: *misc-default
     fast_dev_run: False
 
-finetune_csqa_sanity: &finetune-csqa-sanity
-  <<: *finetune-csqa
-  data:
+pretrain_wikitop: &pretrain-wikitop
+  <<: *default
+  model: &pretrain-wikitop-model
+    <<: *model-default
+    k: 8
+    gnn_dim: 256
+    ie_dim: 256
+  data: &pretrain-wikitop-data
     <<: *data-default
-    <<: *conceptnet
-    <<: *csqa-sanity
-  optim:
+    <<: *wikidata5m
+    <<: *wikitop-pretrain
+    encoder_input: context_prefix
+    decoder_label: context_suffix
+    max_node_num: 30
+    has_choice_graph: False  # does each choice has a subgraph?
+  optim: &pretrain-wikitop-optim
     <<: *optim-default
-    learning_rate: 0.005
-    batch_size: 64
-    max_seq_len: 512
+    max_seq_len: 312
+    batch_size: 56
     freeze_lm: True
     freeze_non_lm: False
+    n_epochs: 20
+    learning_rate: 0.0005
   misc:
     <<: *misc-default
-    fast_dev_run: True
-    log_interval: 4
+    fast_dev_run: False
+    prefix_ratio: 0.0
 
-finetune_csqa_pretrained_adapter:
-  <<: *finetune-csqa
-  misc:
-    <<: *misc-default
-    checkpoint_path: artifacts/pretrained/lit_obqa_t5b_e20_adapter.ckpt
+pretrain_wikitop_langemb:
+  <<: *pretrain-wikitop
+  data:
+    <<: *pretrain-wikitop-data
+    <<: *wikidata5m-langemb
+
+pretrain_wikitop_xl: &pretrain-wikitop-xl
+  <<: *pretrain-wikitop
+  model:
+    <<: *pretrain-wikitop-model
+    encoder_name_or_path: google/flan-t5-xl
+    xattn_every: 2
+    xattn_ff_mult: 1
+  optim:
+    <<: *pretrain-wikitop-optim
+    batch_size: 8
+    strategy: deepspeed_stage_3_offload
+    optimizer: deepspeed_offload

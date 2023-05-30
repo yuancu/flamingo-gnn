@@ -13,7 +13,7 @@ from transformers import AutoModelForSeq2SeqLM
 from transformers.adapters import LoRAConfig, PfeifferConfig, CompacterConfig
 
 from dataset.lmgnn import load_data as load_lmgnn_data
-from dataset.mutiple_choice import load_data as load_multiple_choice_data
+from dataset.multiple_choice import load_data as load_multiple_choice_data
 from lightning.lit_t5 import LitT5
 from lightning.lit_multiple_choice import LitT5LMForMultipleChoice
 from utils.common import load_args
@@ -94,7 +94,7 @@ def main(args):
             train_kwargs=train_kwargs,
             val_kwargs=val_kwargs,
             num_choices=args.num_choices,
-            inject_choice=inject_choice,)
+            has_choice_graph=inject_choice,)
     else:
         train_loader, val_loader = load_lmgnn_data(
             args,

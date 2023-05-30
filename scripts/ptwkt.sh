@@ -25,4 +25,4 @@ python -c "import torch_geometric; print('torch_geometric version:', torch_geome
 export TOKENIZERS_PARALLELISM=true
 
 # run pretrain
-python  train.py --pretrain --config configs/lmgnn.yaml --config-profile pretrain_wikitop --run-name ptwkt-0pf
+python  train.py --pretrain --config configs/pretrain.yaml --config-profile pretrain_wikitop --run-name ptwkt-0pf

@@ -1,0 +1,174 @@
+default: &default
+  model: &model-default
+    k: 5  # The number of GNN layers
+    att_head_num: 2  # number of attention heads of the final graph nodes' pooling
+    gnn_dim: 100  # dimension of the GNN layers
+    freeze_ent_emb: True  # Whether to freeze the entity embedding layer.
+    ie_dim: 200  # number of the hidden units of the MInt operator.
+    ie_layer_num: 1  # number of hidden layers in the MInt operator
+    cxt_node_connects_all: True  # Whether to connect the interaction node to all the retrieved KG nodes or only the linked nodes.
+    encoder_name_or_path: t5-base
+    xattn_dim_head: 64
+    xattn_heads: 8
+    xattn_every: 1
+    xattn_ff_mult: 4
+  data: &data-default
+    kg_only_use_qa_nodes: False
+    max_node_num: 200  # Max number of nodes / the threshold used to prune nodes.
+    num_dataloader_workers: 8
+    mlm_probability: 0.2
+    encoder_input: contextualized_question
+    decoder_label: answer
+    has_choice_graph: False  # does each choice has a subgraph?
+  optim: &optim-default
+    # Optimization
+    loss: cross_entropy  # model type
+    optimizer: adamw  # the optimizer
+    batch_size: 256
+    max_grad_norm: 1.0  # max grad norm (0 to disable)
+    n_epochs: 100  # total number of training epochs to perform.
+    eval_batch_size: 64
+    init_range: 0.02  # stddev when initializing with normal distribution
+    redef_epoch_steps: -1
+    # Regularization:
+    dropouti: 0.2  # dropout for embedding layer
+    dropoutg: 0.2  # dropout for GNN layers
+    dropoutf: 0.2  # dropout for fully-connected layers
+    # Customized
+    fp16: True
+    dist_backend: nccl # gloo, nccl or mpi
+    batch_size: 128
+    learning_rate: 0.001
+    freeze_lm: True
+    freeze_non_lm: False
+    max_seq_len: 512
+    strategy: auto
+  misc: &misc-default
+    mode: train  # run training or evaluation
+    save_dir: ./saved_models/  # model output directory
+    save_model: 2  # 0: do not save model checkpoints. 1: save if best dev. 2: save always
+    checkpoint_path:  # The checkpoint for finetuning, or to resume training from if restore_training is set
+    restore_training: False  # Whether to restore training from the checkpoint
+    # added
+    wandb_mode: online # online, offline or disabled
+    wandb_project: flamingo-gnn
+    world_size: 1
+    fast_dev_run: False
+    log_interval: 20
+    run_name:
+    save_interval: 5
+    log_dir: logs
+    retrieve_text: False
+    prefix_ratio: 0.2
+    monitor: em
+    monitor_mode: max
+
+# Data
+
+wikidata5m: &wikidata5m
+  kg: wikidata5m
+  num_relations: 828  # number of relations for wikidata5m
+  ent_emb_paths: data/wikidata5m/entity_embeddings.npy
+
+
+# Mintaka Dataset for fine-tuning
+mintaka_finetune: &mintaka-finetune
+  dataset: mintaka
+  train_statements: data/mintaka/statement/train.statement.jsonl
+  train_adj: data/mintaka/adj/train
+  dev_statements: data/mintaka/statement/validation.statement.jsonl
+  dev_adj: data/mintaka/adj/validation
+  test_statements: data/mintaka/statement/test.statement.jsonl
+  test_adj: data/mintaka/adj/test
+  legacy_adj: False
+
+mintaka_fintune_filtered: &mintaka-fintune-filtered
+  dataset: mintaka
+  train_statements: data/mintaka_filtered/statement/train.statement.jsonl
+  train_adj: data/mintaka_filtered/adj/train
+  dev_statements: data/mintaka_filtered/statement/validation.statement.jsonl
+  dev_adj: data/mintaka_filtered/adj/validation
+  test_statements: data/mintaka_filtered/statement/test.statement.jsonl
+  test_adj: data/mintaka_filtered/adj/test
+  legacy_adj: False
+
+finetune_mintaka: &finetune-mintaka
+  <<: *default
+  model:
+    <<: *model-default
+    k: 8
+    gnn_dim: 256
+    ie_dim: 256
+  data:
+    <<: *data-default
+    <<: *wikidata5m
+    <<: *mintaka-finetune
+    max_node_num: 128
+    encoder_input: question
+    decoder_label: answer
+    num_dataloader_workers: 8
+  optim:
+    <<: *optim-default
+    max_seq_len: 64
+    n_epochs: 100
+    batch_size: 144
+    eval_batch_size: 144
+    freeze_lm: True
+    freeze_non_lm: False
+    learning_rate: 0.00005
+  misc: 
+    <<: *misc-default
+    wandb_mode: online
+    retrieve_text: False
+    fast_dev_run: False
+    checkpoint_path: artifacts/pretrained/lit_wikitop_epoch24.ckpt
+
+finetune_mintaka_no_graph: &finetune-mintaka-no-graph
+  <<: *finetune-mintaka
+  misc:
+    <<: *misc-default
+    wandb_mode: online
+    no_graph: True
+    checkpoint_path:
+
+finetune_mintaka_no_graph_pretrained: &finetune-mintaka-no-graph-pretrained
+  <<: *finetune-mintaka
+  misc:
+    <<: *misc-default
+    wandb_mode: online
+    no_graph: True
+    checkpoint_path: artifacts/pretrained/lit_wikitop_epoch24.ckpt
+
+finetune_mintaka_filtered:
+  <<: *finetune-mintaka
+  data:
+    <<: *data-default
+    <<: *wikidata5m
+    <<: *mintaka-fintune-filtered
+    max_node_num: 128
+    encoder_input: question
+    decoder_label: answer
+    num_dataloader_workers: 8
+
+finetune_mintaka_filtered_no_graph:
+  <<: *finetune-mintaka-no-graph
+  data:
+    <<: *data-default
+    <<: *wikidata5m
+    <<: *mintaka-fintune-filtered
+    max_node_num: 128
+    encoder_input: question
+    decoder_label: answer
+    num_dataloader_workers: 8
+
+finetune_mintaka_filtered_no_graph_pretrained:
+  <<: *finetune-mintaka-no-graph-pretrained
+  data:
+    <<: *data-default
+    <<: *wikidata5m
+    <<: *mintaka-fintune-filtered
+    max_node_num: 128
+    encoder_input: question
+    decoder_label: answer
+    num_dataloader_workers: 8
+

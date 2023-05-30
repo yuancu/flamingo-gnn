@@ -51,7 +51,7 @@ class LMGNNChoiceDataset(Dataset):
                  model_name='t5-base', max_node_num=200, cxt_node_connects_all=True,
                  kg_only_use_qa_nodes=False, truncation_side='right',
                  encoder_input='question', decoder_label='answer', prefix_ratio=0.2,
-                 inject_choice=False):
+                 num_choices=4, has_choice_graph=False):
         """
         Valid pairs of encoder_input and decoder_label:
         - Pretraining (Denoise): encoder_input = 'context', decoder_label = 'context'
@@ -66,6 +66,8 @@ class LMGNNChoiceDataset(Dataset):
             adj_path: the path to a monilithic adj pickle (legacy) or path to a folder containing adj pickle files
             legacy_mode: if True, use the monolithic adj pickle file, else the adj_path should be a folder
             encoder_input: the input to the encoder. Can be 'question', 'context', or 'contextualized_question'
+            has_choice_graph: if True, each choice will have its own graph. Otherwise, the graph for the question is
+                duplicated for each choice
         """
         assert encoder_input in ['question', 'context', 'context_prefix', 'retrieval_augmented_question', 'contextualized_question']
         assert decoder_label  in ['answer', 'context', 'context_suffix', 'raw_answers', 'choices']
@@ -93,6 +95,8 @@ class LMGNNChoiceDataset(Dataset):
         self.num_relations = num_relations
         self.max_node_num = max_node_num
         self.kg_only_use_qa_nodes = kg_only_use_qa_nodes
+        self.num_choices = num_choices
+        self.has_choice_graph = has_choice_graph
 
         # For retrieval
         if encoder_input == 'retrieval_augmented_question':
@@ -100,9 +104,6 @@ class LMGNNChoiceDataset(Dataset):
 
         # For prefix completion
         self.prefix_ratio = prefix_ratio
-
-        # For multiple choices
-        self.inject_choice = inject_choice
 
     def __len__(self):
         return len(self.examples)
@@ -117,8 +118,8 @@ class LMGNNChoiceDataset(Dataset):
         choice_label = example.label
 
         # 2. Load graph data, post processing is done in the _load_graph_from_index function
-        node_ids, node_type_ids, node_scores, adj_length, special_nodes_mask,\
-            edge_index, edge_type = self._load_graph_from_index(idx)
+        node_ids, node_type_ids, adj_length, edge_index, \
+            edge_type = self._load_graph_from_index(idx)
 
         return InputFeatures(input_ids, attention_mask, decoder_labels, choice_label,
             node_ids, node_type_ids, adj_length,
@@ -127,11 +128,29 @@ class LMGNNChoiceDataset(Dataset):
     def _load_graph_from_index(self, idx):
         """adapted from load_sparse_adj_data_with_contextnode in utils/data_utils.py L653"""
         example = self.examples[idx]
-        graph = self.load_graph(example.example_id)
-        *decoder_data, adj_data = self.preprocess_graph(graph)
-        node_ids, node_type_ids, node_scores, adj_length, special_nodes_mask = decoder_data
-        edge_index, edge_type = adj_data
-        return node_ids, node_type_ids, node_scores, adj_length, special_nodes_mask,\
+        graph_id = example.example_id
+        if self.has_choice_graph:
+            decoder_data_list = []
+            adj_data_list = []
+            for i in range(self.num_choices):
+                choice_graph_id = graph_id + f"_{i}"
+                graph = self.load_graph(choice_graph_id)
+                *decoder_data, adj_data = self.preprocess_graph(graph)
+                adj_data_list.append(adj_data)
+                decoder_data_list.append(decoder_data)
+        else:
+            graph = self.load_graph(graph_id)
+            *decoder_data, adj_data = self.preprocess_graph(graph)
+            decoder_data_list = [decoder_data] * self.num_choices
+            adj_data_list = [adj_data] * self.num_choices
+        node_ids, node_type_ids, node_scores, adj_length, special_nodes_mask = zip(*decoder_data_list)
+        edge_index, edge_type = zip(*adj_data_list)
+
+        node_ids = torch.stack(node_ids, dim=0)
+        node_type_ids = torch.stack(node_type_ids, dim=0)
+        adj_length = torch.stack(adj_length, dim=0)
+
+        return node_ids, node_type_ids, adj_length,\
             edge_index, edge_type
 
     def load_graph(self, example_id):
@@ -339,7 +358,7 @@ class LMGNNChoiceDataset(Dataset):
             encoder_input = context
         elif self.encoder_input == 'question':
             encoder_input = 'question: ' + question
-            if self.decoder_label == 'choices' and self.inject_choice:
+            if self.decoder_label == 'choices' and self.has_choice_graph:
                 encoder_input = self.inject_choices(encoder_input, answers)
         elif self.encoder_input == 'contextualized_question':
             encoder_input = 'question: ' + question + ' context: ' + context
@@ -669,20 +688,20 @@ class T5GNNMultipleChoiceDataCollator:
                 edge_type = create_dummy_graph(batch_size)
         else:
             # batch_size * [num_choices, max_nodes] => [batch_size, num_choices, max_nodes]
-            node_ids = torch.stack([example.node_ids.expand(self.num_choices, *example.node_ids.shape) for example in examples], dim=0)
-            node_type_ids = torch.stack([example.node_type_ids.expand(self.num_choices, *example.node_type_ids.shape) for example in examples], dim=0)
-            # batch_size * [] => [batch_size, num_choices]
-            adj_lengths = torch.stack([example.adj_length.expand(self.num_choices, *example.adj_length.shape) for example in examples], dim=0)
-            # batch_size * [2, E] => batch_size * [num_choices, 2, E], E varies
-            edge_index = [example.edge_index.expand(self.num_choices, *example.edge_index.shape) for example in examples]
-            # batch_size * [E, ] => batch_size * [num_choices, E], E varies
-            edge_type = [example.edge_type.expand(self.num_choices, *example.edge_type.shape) for example in examples]
+            node_ids = torch.stack([example.node_ids for example in examples], dim=0)
+            node_type_ids = torch.stack([example.node_type_ids for example in examples], dim=0)
+            # batch_size * [num_choices] => [batch_size, num_choices]
+            adj_lengths = torch.stack([example.adj_length for example in examples], dim=0)
+            # batch_size * num_choices * [2, E] => [batch_size, [num_choices, [2, E]]], E varies
+            edge_index = [example.edge_index for example in examples]
+            # batch_size * [num_choices, [E, ]] => [batch_size, [num_choices, [E,]]], E varies
+            edge_type = [example.edge_type for example in examples]
         return input_ids, attention_mask, decoder_labels, choice_labels, \
             node_ids, node_type_ids, adj_lengths, \
             edge_index, edge_type
 
 
-def load_data(args, corrupt=False, dummy_graph=False, num_workers=1, num_choices=5, inject_choice=False,
+def load_data(args, corrupt=False, dummy_graph=False, num_workers=1, num_choices=5, has_choice_graph=False,
               train_kwargs={'encoder_input': 'contextualized_question', 'decoder_label': 'answer'},
               val_kwargs={'encoder_input': 'contextualized_question', 'decoder_label': 'raw_answers'}):
     """Construct the dataset and return dataloaders
@@ -707,7 +726,7 @@ def load_data(args, corrupt=False, dummy_graph=False, num_workers=1, num_choices
         model_name=model_name,
         max_seq_length=max_seq_length,
         prefix_ratio=prefix_ratio,
-        inject_choice=inject_choice,
+        has_choice_graph=has_choice_graph,
         **train_kwargs)
     validation_dataset = LMGNNChoiceDataset(
         statement_path=args.dev_statements,
@@ -716,7 +735,7 @@ def load_data(args, corrupt=False, dummy_graph=False, num_workers=1, num_choices
         model_name=model_name,
         max_seq_length=max_seq_length,
         prefix_ratio=prefix_ratio,
-        inject_choice=inject_choice,
+        has_choice_graph=has_choice_graph,
         **val_kwargs)
     # get tokenizer
     train_collator = T5GNNMultipleChoiceDataCollator(
