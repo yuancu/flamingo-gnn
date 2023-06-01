@@ -65,7 +65,7 @@ class LitT5ForMultipleChoice(pl.LightningModule):
         If use_ddp is True, the optimizer will be wrapped by DistributedDataParallel.
         """
         parameters = self.model.parameters()
-        learning_rate = float(self.args.learning_rate)
+        learning_rate = float(self.learning_rate)
         if self.args.optimizer == "deepspeed_offload":
             optimizer = DeepSpeedCPUAdam(parameters, lr=learning_rate)
         elif self.args.optimizer == "adamw":
@@ -188,6 +188,8 @@ class LitT5LMForMultipleChoice(LitT5ForMultipleChoice):
         self.model = model
         self.tokenizer = AutoTokenizer.from_pretrained(model.name_or_path)
         self.evaluator = evaluate.load('accuracy')
+        self.learning_rate = args.learning_rate
+        
 
     def batch_forward(self, batch):
         input_ids, attention_mask, decoder_labels, _, \

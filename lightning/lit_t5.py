@@ -32,6 +32,7 @@ class LitT5(pl.LightningModule):
         self.model = model
         self.tokenizer = AutoTokenizer.from_pretrained(model.name_or_path)
         self.evaluator = evaluate
+        self.learning_rate = args.learning_rate
 
     def batch_forward(self, batch):
         input_ids, attention_mask, decoder_labels, \
@@ -53,6 +54,10 @@ class LitT5(pl.LightningModule):
         loss = output.loss
         self.log('train_loss', loss)
         return loss
+
+    def on_train_epoch_end(self):
+        super().on_train_epoch_end()
+        self.log("learning_rate", self.learning_rate)
 
     def validation_step(self, batch, batch_idx):
 
@@ -101,7 +106,7 @@ class LitT5(pl.LightningModule):
         If use_ddp is True, the optimizer will be wrapped by DistributedDataParallel.
         """
         parameters = self.model.parameters()
-        learning_rate = float(self.args.learning_rate)
+        learning_rate = float(self.learning_rate)
         if self.args.optimizer == "deepspeed_offload":
             optimizer = DeepSpeedCPUAdam(parameters, lr=learning_rate)
         elif self.args.optimizer == "adamw":

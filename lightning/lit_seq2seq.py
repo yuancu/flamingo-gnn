@@ -55,6 +55,7 @@ class LitT5Seq2Seq(pl.LightningModule):
         # Construct a encoder-decoder model
         model = T5Seq2Seq(encoder=encoder, decoder=decoder)
         self.model = model
+        self.learning_rate = args.learning_rate
         # The tokenizer is used in the validation step
         tokenizer = AutoTokenizer.from_pretrained(args.encoder_name_or_path)
         self.tokenizer = tokenizer
@@ -160,7 +161,7 @@ class LitT5Seq2Seq(pl.LightningModule):
         If use_ddp is True, the optimizer will be wrapped by DistributedDataParallel.
         """
         parameters = self.model.parameters()
-        learning_rate = float(self.args.learning_rate)
+        learning_rate = float(self.learning_rate)
         if self.args.optimizer == "deepspeed_offload":
             optimizer = DeepSpeedCPUAdam(parameters, lr=learning_rate)
         elif self.args.optimizer == "adamw":

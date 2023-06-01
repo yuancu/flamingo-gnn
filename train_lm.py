@@ -7,9 +7,10 @@ from pathlib import Path
 
 import pytorch_lightning as pl
 import torch
-from pytorch_lightning.callbacks import ModelCheckpoint
+import wandb
+from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateFinder
 from pytorch_lightning.loggers import WandbLogger
-from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM
+from transformers import AutoModelForSeq2SeqLM
 from transformers.adapters import LoRAConfig, PfeifferConfig, CompacterConfig
 
 from dataset.lmgnn import load_data as load_lmgnn_data
@@ -72,8 +73,6 @@ def main(args):
     fp16 = args.fp16
     mode = 'finetune'
     config_profile = args.config_profile
-    args = load_args(config_path=args.config, profile=args.config_profile)
-    args.run_name = run_name
 
     # 2. Load data
     # Set collator and dataset according to the task: pretrain is mainly devided into two types:
@@ -112,14 +111,7 @@ def main(args):
         t5.add_adapter("adapter", config=config)
         t5.train_adapter("adapter")
 
-    # 4. Create pytorch lightning model
-    if multiple_choice:
-        model_cls = LitT5LMForMultipleChoice
-    else:
-        model_cls = LitT5
-    model = model_cls(args, t5)
-
-    # 5. Create trainer
+    # 4. Create wandb logger
     now = datetime.now().strftime('%m%d%H%M')
     run_name = f"{args.run_name}-{now}"
     offline = args.wandb_mode in ['offline', 'disabled']
@@ -127,11 +119,24 @@ def main(args):
     wandb_logger = WandbLogger(project=args.wandb_project, offline=offline, name=run_name,
                                group=config_profile, save_dir=args.log_dir)
     wandb_logger.experiment.config.update(vars(args))
+
+    # 5. Create pytorch lightning model
+    if multiple_choice:
+        model_cls = LitT5LMForMultipleChoice
+    else:
+        model_cls = LitT5
+    model = model_cls(args, t5)
+
+    # 6. Callbacks: lr finder and checkpoint
+    callbacks = []
+    if args.tune_lr:
+        lr_finder = LearningRateFinder()
+        callbacks.append(lr_finder)
     if mode == 'finetune' and not multiple_choice:
         checkpoint_callback = ModelCheckpoint(monitor="em", mode="max", save_weights_only=True,)
-        callbacks = [checkpoint_callback]
-    else:
-        callbacks = None
+        callbacks.append(checkpoint_callback)
+
+    # 7. Create trainer
     optional_kwargs = {}
     if fp16:
         optional_kwargs['precision'] = 16
@@ -141,7 +146,7 @@ def main(args):
                          callbacks=callbacks, gradient_clip_val=0.5,
                          accumulate_grad_batches=8, devices=devices, **optional_kwargs)
 
-    # 6. Train
+    # 8. Train
     if args.restore_training:
         resume_checkpoint = args.checkpoint_path
         assert resume_checkpoint, "No checkpoint to resume training. (got {resume_checkpoint})"
@@ -169,5 +174,10 @@ if __name__ == '__main__':
     parser.add_argument('--adapter', default=None, help='Whether to add adapter to the model. No adapter if not set.')
     parser.add_argument('--devices', type=int, default=1, help='Number of devices to use.')
     parser.add_argument('--fp16', action='store_true', help='Whether to use fp16.')
+    parser.add_argument('--tune-lr', action='store_true', help='Whether to tune learning rate.')
     args = parser.parse_args()
-    main(args)
+    
+    loaded_args = load_args(config_path=args.config, profile=args.config_profile)
+    loaded_args.__dict__.update(args.__dict__)
+
+    main(loaded_args)
