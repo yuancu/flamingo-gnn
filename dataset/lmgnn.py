@@ -684,5 +684,5 @@ def load_data(args, corrupt=False, dummy_graph=False, num_workers=1,
         dummy_graph=dummy_graph,
         return_raw_answers=val_kwargs['decoder_label'] == 'raw_answers',)
     train_dataloader = DataLoader(train_dataset, collate_fn=train_collator, batch_size=args.batch_size,num_workers=num_workers)
-    validation_dataloader = DataLoader(validation_dataset, collate_fn=val_collator, batch_size=args.eval_batch_size, num_workers=num_workers)
+    validation_dataloader = DataLoader(validation_dataset, collate_fn=val_collator, batch_size=args.batch_size, num_workers=num_workers)
     return train_dataloader, validation_dataloader

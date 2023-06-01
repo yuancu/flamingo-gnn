@@ -9,7 +9,7 @@ import pytorch_lightning as pl
 import torch
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
-from transformers import AutoModelForSeq2SeqLM
+from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM
 from transformers.adapters import LoRAConfig, PfeifferConfig, CompacterConfig
 
 from dataset.lmgnn import load_data as load_lmgnn_data
@@ -126,7 +126,7 @@ def main(args):
     Path(args.log_dir).mkdir(parents=True, exist_ok=True)
     wandb_logger = WandbLogger(project=args.wandb_project, offline=offline, name=run_name,
                                group=config_profile, save_dir=args.log_dir)
-    # wandb_logger.experiment.config.update(vars(args))
+    wandb_logger.experiment.config.update(vars(args))
     if mode == 'finetune' and not multiple_choice:
         checkpoint_callback = ModelCheckpoint(monitor="em", mode="max", save_weights_only=True,)
         callbacks = [checkpoint_callback]

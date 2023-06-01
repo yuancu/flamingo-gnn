@@ -27,7 +27,6 @@ default: &default
     batch_size: 256
     max_grad_norm: 1.0  # max grad norm (0 to disable)
     n_epochs: 100  # total number of training epochs to perform.
-    eval_batch_size: 64
     init_range: 0.02  # stddev when initializing with normal distribution
     redef_epoch_steps: -1
     # Regularization:
@@ -37,7 +36,6 @@ default: &default
     # Customized
     fp16: True
     dist_backend: nccl # gloo, nccl or mpi
-    batch_size: 128
     learning_rate: 0.001
     freeze_lm: True
     freeze_non_lm: False
@@ -86,6 +84,28 @@ mcwq_fintune: &mcwq-finetune
   test_adj: data/mcwq/adj/test
   legacy_adj: False
 
+mcwq_filtered: &mcwq-filtered
+  dataset: mcwq
+  train_statements: data/mcwq_filtered/contextualized/train.jsonl
+  dev_statements: data/mcwq_filtered/contextualized/dev.jsonl
+  test_statements: data/mcwq_filtered/contextualized/test.jsonl
+  # adjs are only for compatibility
+  train_adj: data/mcwq/adj/train
+  dev_adj: data/mcwq/adj/dev
+  test_adj: data/mcwq/adj/test
+  legacy_adj: False
+
+mcwq_yesno: &mcwq-yesno
+  dataset: mcwq
+  train_statements: data/mcwq_filtered/contextualized_yesno/train.jsonl
+  dev_statements: data/mcwq_filtered/contextualized_yesno/dev.jsonl
+  test_statements: data/mcwq_filtered/contextualized_yesno/test.jsonl
+  # adjs are only for compatibility
+  train_adj: data/mcwq/adj/train
+  dev_adj: data/mcwq/adj/dev
+  test_adj: data/mcwq/adj/test
+  legacy_adj: False
+
 finetune_mcwq: &finetune-mcwq
   <<: *default
   model:
@@ -99,11 +119,9 @@ finetune_mcwq: &finetune-mcwq
     <<: *mcwq-finetune
     encoder_input: question
     decoder_label: answer
-  optim:
+  optim: &optim-finetune-mcwq
     <<: *optim-default
-    max_seq_len: 32
-    batch_size: 192
-    eval_batch_size: 128
+    batch_size: 128
     freeze_lm: True
     freeze_non_lm: False
     learning_rate: 0.00005
@@ -126,8 +144,6 @@ finetune_mcwq_no_graph_pretrained:
     checkpoint_path: artifacts/pretrained/lit_wikitop_epoch24.ckpt
     no_graph: True
 
-finetune_mcwq_t5:
-  <<: *finetune-mcwq-no-graph
 
 # Encode GNN nodes with language emeddings
 finetune_mcwq_langemb: &finetune-mcwq-langemb
@@ -148,6 +164,32 @@ finetune_mcwq_langemb_ptd:
     <<: *misc-default
     checkpoint_path: artifacts/pretrained/lit_wikitop_e20_langemb.ckpt
 
+finetune_mcwq_lmonly_filtered: &finetune-mcwq-lmonly-filtered
+  <<: *finetune-mcwq
+  optim:
+    <<: *optim-finetune-mcwq
+    batch_size: 64
+    max_seq_length: 128
+    learning_rate: 0.001
+  data:
+    <<: *data-default
+    <<: *wikidata5m
+    <<: *mcwq-filtered
+    encoder_input: question
+    decoder_label: answer
+  misc:
+    <<: *misc-default
+    no_graph: True
+
+# Verbalize subgraphs as context for LM only finetuning
+finetune_mcwq_lmonly_filtered_contextualized:
+  <<: *finetune-mcwq-lmonly-filtered
+  data:
+    <<: *data-default
+    <<: *wikidata5m
+    <<: *mcwq-filtered
+    encoder_input: contextualized_question
+    decoder_label: answer
 
 test:
   <<: *finetune-mcwq

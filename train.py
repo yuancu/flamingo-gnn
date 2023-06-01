@@ -108,7 +108,7 @@ def main(args):
     Path(args.log_dir).mkdir(parents=True, exist_ok=True)
     wandb_logger = WandbLogger(project=args.wandb_project, offline=offline, name=run_name,
                                group=config_profile, save_dir=args.log_dir)
-    # wandb_logger.experiment.config.update(vars(args))
+    wandb_logger.experiment.config.update(vars(args))
     if mode == 'finetune':
         checkpoint_callback = ModelCheckpoint(monitor=args.monitor, mode=args.monitor_mode, save_weights_only=True,)
         callbacks = [checkpoint_callback]

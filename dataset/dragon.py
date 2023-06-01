@@ -846,6 +846,6 @@ def load_data(args, dataset_cls, collate_fn, corrupt=True, num_workers=1, dummy_
     # set tokenizer
     collate_fn = partial(collate_fn, tokenizer=train_dataset.tokenizer)
     train_dataloader = DataLoader(train_dataset, collate_fn=collate_fn, batch_size=args.batch_size,num_workers=num_workers)
-    dev_dataloader = DataLoader(dev_dataset, collate_fn=collate_fn, batch_size=args.eval_batch_size, num_workers=num_workers)
-    test_dataloader = DataLoader(test_dataset, collate_fn=collate_fn, batch_size=args.eval_batch_size, num_workers=num_workers)
+    dev_dataloader = DataLoader(dev_dataset, collate_fn=collate_fn, batch_size=args.batch_size, num_workers=num_workers)
+    test_dataloader = DataLoader(test_dataset, collate_fn=collate_fn, batch_size=args.batch_size, num_workers=num_workers)
     return train_dataloader, dev_dataloader, test_dataloader
