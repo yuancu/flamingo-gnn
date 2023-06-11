@@ -61,6 +61,13 @@ class T5GNNEncoder(PreTrainedModel):
         self.dropout_embed = nn.Dropout(config.dropout_emb)
 
         # Texe message passing
+        # self.interaction_initilizer = nn.Sequential(
+        #     nn.Linear(config.gnn_dim, config.gnn_dim),
+        #     nn.BatchNorm1d(config.gnn_dim),
+        #     nn.ReLU(),
+        #     nn.Linear(config.gnn_dim, config.gnn_dim)
+        # )
+        self.initial_gnn_query = nn.Parameter(torch.randn(config.gnn_dim))
         self.emb_node_type = nn.Linear(config.n_ntype, config.gnn_dim // 2)
         self.Vh = nn.Linear(config.gnn_dim, config.gnn_dim)
         self.Vx = nn.Linear(config.gnn_dim, config.gnn_dim)
@@ -139,12 +146,12 @@ class T5GNNEncoder(PreTrainedModel):
         # Originally in T5DragonEncoder
         edge_index, edge_type = self.batch_graph(edge_index, edge_type, node_ids.size(1))
         adj = (edge_index, edge_type)
-        
+
         # Originally in T5GNN
         # Embed node
         node_ids[node_ids == 0] = self.config.num_entity + 2
         gnn_input = self.node_emb(node_ids - 1)
-        gnn_input[:, 0] = 0
+        gnn_input[:, 0] = self.initial_gnn_query
         gnn_input = self.dropout_embed(gnn_input)
 
         # Originally in TextMessagePassing
@@ -174,10 +181,10 @@ class T5GNNEncoder(PreTrainedModel):
                 node_feature_extra=node_feature_extra
             )
         gnn_output = self.activation_gat(X)
-        
+
         # Originally in TextMessagePassing
         gnn_output = self.activation_residual(self.Vh(gnn_input) + self.Vx(gnn_output))
-        
+
         # Originally in T5GNN
         node_mask = torch.arange(node_type_ids.size(1), device=node_type_ids.device) >= adj_lengths.unsqueeze(1) #[bs, nodes] 1 means masked out
         gnn_output = gnn_output * (~node_mask).float().unsqueeze(2)
