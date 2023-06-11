@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytorch_lightning as pl
 import torch
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateFinder
 from pytorch_lightning.loggers import WandbLogger
 from transformers.adapters import AdapterConfig
 
@@ -37,6 +37,7 @@ def main(args):
     multiple_choice = args.multiple_choice
     add_adapter = args.add_adapter
     devices = args.devices
+    tune_lr = args.tune_lr
     args = load_args(config_path=args.config, profile=args.config_profile)
     args.run_name = run_name
 
@@ -109,13 +110,17 @@ def main(args):
     wandb_logger = WandbLogger(project=args.wandb_project, offline=offline, name=run_name,
                                group=config_profile, save_dir=args.log_dir)
     wandb_logger.experiment.config.update(vars(args))
+    callbacks = []
+    if tune_lr:
+        lr_finder = LearningRateFinder()
+        callbacks.append(lr_finder)
     if mode == 'finetune':
         checkpoint_callback = ModelCheckpoint(monitor=args.monitor, mode=args.monitor_mode, save_weights_only=True,)
-        callbacks = [checkpoint_callback]
+        callbacks.append(checkpoint_callback)
     else:
         checkpoint_callback = ModelCheckpoint(monitor="loss", mode="min", save_weights_only=True,
                                               dirpath="artifacts/pretrained", filename=args.run_name+".ckpt")
-        callbacks = None
+
     trainer = pl.Trainer(max_epochs=args.n_epochs, fast_dev_run=args.fast_dev_run,
                          default_root_dir=os.path.join(args.save_dir, args.run_name),
                          accelerator='gpu', strategy=args.strategy, logger=wandb_logger,
@@ -158,6 +163,7 @@ if __name__ == '__main__':
     parser.add_argument('--multiple-choice', action='store_true')
     parser.add_argument('--add-adapter', action='store_true')
     parser.add_argument('--devices', type=int, default=1)
+    parser.add_argument('--tune-lr', action='store_true')
     args = parser.parse_args()
     if not args.pretrain ^ args.finetune:
         raise ValueError('Either pretrain or finetune should be set.')

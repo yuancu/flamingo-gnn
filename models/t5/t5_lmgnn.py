@@ -108,7 +108,7 @@ class T5GNNEncoder(PreTrainedModel):
         edge_type_init:   list of (n_examples, ). each entry is torch.tensor(E?, )     ==> [total_E, ]
         """
         n_examples = len(edge_index_init)
-        edge_index = [edge_index_init[_i_] + _i_ * n_nodes for _i_ in range(n_examples)]
+        edge_index = [edge_index_init[i] + i * n_nodes for i in range(n_examples)]
         edge_index = torch.cat(edge_index, dim=1) #[2, total_E]
         edge_type = torch.cat(edge_type_init, dim=0) #[total_E, ]
         return edge_index, edge_type
