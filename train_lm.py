@@ -176,7 +176,7 @@ if __name__ == '__main__':
     parser.add_argument('--fp16', action='store_true', help='Whether to use fp16.')
     parser.add_argument('--tune-lr', action='store_true', help='Whether to tune learning rate.')
     args = parser.parse_args()
-    
+
     loaded_args = load_args(config_path=args.config, profile=args.config_profile)
     loaded_args.__dict__.update(args.__dict__)
 

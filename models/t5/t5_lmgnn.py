@@ -101,7 +101,7 @@ class T5GNNEncoder(PreTrainedModel):
         edge_type_init:   list of (n_examples, ). each entry is torch.tensor(E?, )     ==> [total_E, ]
         """
         n_examples = len(edge_index_init)
-        edge_index = [edge_index_init[_i_] + _i_ * n_nodes for _i_ in range(n_examples)]
+        edge_index = [edge_index_init[i] + i * n_nodes for i in range(n_examples)]
         edge_index = torch.cat(edge_index, dim=1) #[2, total_E]
         edge_type = torch.cat(edge_type_init, dim=0) #[total_E, ]
         return edge_index, edge_type
@@ -139,7 +139,7 @@ class T5GNNEncoder(PreTrainedModel):
         # Originally in T5DragonEncoder
         edge_index, edge_type = self.batch_graph(edge_index, edge_type, node_ids.size(1))
         adj = (edge_index, edge_type)
-        
+
         # Originally in T5GNN
         # Embed node
         node_ids[node_ids == 0] = self.config.num_entity + 2
