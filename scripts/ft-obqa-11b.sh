@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 export TOKENIZERS_PARALLELISM=true
 
 # run pretrain

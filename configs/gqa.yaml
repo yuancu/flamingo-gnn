@@ -39,7 +39,7 @@ default: &default
     learning_rate: 0.0001
     freeze_lm: True
     freeze_non_lm: False
-    max_seq_len: 512
+    max_seq_len: 128
     strategy: auto
   misc: &misc-default
     mode: train  # run training or evaluation
@@ -94,15 +94,14 @@ finetune_gqa: &finetune-gqa
     decoder_label: answer
   optim: &optim-finetune-gqa
     <<: *optim-default
-    batch_size: 96
+    batch_size: 128
     freeze_lm: True
     freeze_non_lm: False
-    learning_rate: 0.00005
+    learning_rate: 0.0005
     n_epochs: 100
   misc:
     <<: *misc-default
-    # prefix-lm with prefix 0
-    checkpoint_path: artifacts/pretrained/lit_wikitop_e30_pre0.ckpt
+    checkpoint_path: artifacts/pretrained/lit_wikitop_epoch24.ckpt
 
 
 finetune_gqa_lmonly: &finetune-gqa-lmonly
@@ -112,6 +111,7 @@ finetune_gqa_lmonly: &finetune-gqa-lmonly
     batch_size: 128
     max_seq_len: 128
     learning_rate: 0.0001
+    freeze_lm: False
   data:
     <<: *data-default
     <<: *wikidata5m
@@ -124,7 +124,7 @@ finetune_gqa_lmonly: &finetune-gqa-lmonly
 
 
 # Verbalize subgraphs as context for LM only finetuning
-finetune_gqa_lmonly_contextualized:
+finetune_gqa_lmonly_contextualized: &finetune-gqa-lmonly-contextualized
   <<: *finetune-gqa-lmonly
   data:
     <<: *data-default
@@ -132,3 +132,25 @@ finetune_gqa_lmonly_contextualized:
     <<: *gqa-finetune
     encoder_input: contextualized_question
     decoder_label: answer
+
+
+test_gqa:
+  <<: *finetune-gqa
+  misc:
+    <<: *misc-default
+    checkpoint_path: saved_models/gqa-epoch=99-step=5300.ckpt
+
+test_gqa_lmonly:
+  <<: *finetune-gqa-lmonly
+  misc:
+    <<: *misc-default
+    no_graph: True
+    checkpoint_path: saved_models/gqa-lmonly-epoch=98-step=5247.ckpt
+
+test_gqa_lmonly_contextualized:
+  <<: *finetune-gqa-lmonly-contextualized
+  misc:
+    <<: *misc-default
+    no_graph: True
+    checkpoint_path: saved_models/gqa-lmonly-ctx-pfeiffer-epoch=80-step=4293.ckpt
+

@@ -8,10 +8,12 @@ from transformers.optimization import Adafactor
 from deepspeed.ops.adam import DeepSpeedCPUAdam
 
 from evaluation.squad import compute_score
-
+from evaluation.bleu import compute_bleu
 
 def evaluate(predictions, references):
     score = compute_score(predictions, references)
+    bleu = compute_bleu(predictions, references)
+    score.update(bleu)
     return score
 
 
@@ -97,6 +99,9 @@ class LitT5(pl.LightningModule):
 
     def test_step(self, *args, **kwargs):
         return self.validation_step(*args, **kwargs)
+
+    def on_test_epoch_end(self) -> None:
+        return self.on_validation_epoch_end()
 
     def forward(self, *args, **kwargs):
         return self.model.forward(*args, **kwargs)

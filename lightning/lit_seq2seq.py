@@ -8,10 +8,13 @@ from deepspeed.ops.adam import DeepSpeedCPUAdam
 
 from models.t5 import T5Seq2Seq
 from evaluation.squad import compute_score
+from evaluation.bleu import compute_bleu
 
 
 def evaluate(predictions, references):
     score = compute_score(predictions, references)
+    bleu = compute_bleu(predictions, references)
+    score.update(bleu)
     return score
 
 
