@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytorch_lightning as pl
 import torch
-from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateFinder
+from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateFinder, LearningRateMonitor
 from pytorch_lightning.loggers import WandbLogger
 from transformers.adapters import AdapterConfig
 
@@ -38,8 +38,6 @@ def main(args):
     add_adapter = args.add_adapter
     devices = args.devices
     tune_lr = args.tune_lr
-    args = load_args(config_path=args.config, profile=args.config_profile)
-    args.run_name = run_name
 
     # 2. Load data
     # Set collator and dataset according to the task: pretrain is mainly devided into two types:
@@ -107,25 +105,33 @@ def main(args):
     run_name = f"{args.run_name}-{now}"
     offline = args.wandb_mode in ['offline', 'disabled']
     Path(args.log_dir).mkdir(parents=True, exist_ok=True)
+    wandb_kwargs = {}
+    if args.wandb_id:
+        wandb_kwargs['id'] = args.wandb_id
     wandb_logger = WandbLogger(project=args.wandb_project, offline=offline, name=run_name,
-                               group=config_profile, save_dir=args.log_dir)
-    wandb_logger.experiment.config.update(vars(args))
+                               group=config_profile, save_dir=args.log_dir, **wandb_kwargs)
+    wandb_logger.experiment.config.update(vars(args), allow_val_change=True)
     callbacks = []
     if tune_lr:
         lr_finder = LearningRateFinder()
         callbacks.append(lr_finder)
     if mode == 'finetune':
         checkpoint_callback = ModelCheckpoint(monitor=args.monitor, mode=args.monitor_mode, save_weights_only=True,)
-        callbacks.append(checkpoint_callback)
     else:
         checkpoint_callback = ModelCheckpoint(monitor="loss", mode="min", save_weights_only=True,
                                               dirpath="artifacts/pretrained", filename=args.run_name+".ckpt")
+    callbacks.append(checkpoint_callback)
+    lr_monitor = LearningRateMonitor(logging_interval='epoch')
+    callbacks.append(lr_monitor)
 
+    optional_kwargs = {}
+    if args.fp16:
+        optional_kwargs['precision'] = '16-mixed'
     trainer = pl.Trainer(max_epochs=args.n_epochs, fast_dev_run=args.fast_dev_run,
                          default_root_dir=os.path.join(args.save_dir, args.run_name),
                          accelerator='gpu', strategy=args.strategy, logger=wandb_logger,
                          callbacks=callbacks, gradient_clip_val=0.5,
-                         accumulate_grad_batches=8, devices=devices)
+                         accumulate_grad_batches=8, devices=devices, **optional_kwargs)
 
     # sanity check
     if add_adapter:
@@ -164,7 +170,18 @@ if __name__ == '__main__':
     parser.add_argument('--add-adapter', action='store_true')
     parser.add_argument('--devices', type=int, default=1)
     parser.add_argument('--tune-lr', action='store_true')
+    parser.add_argument('--fp16', action='store_true')
+    parser.add_argument('--wandb-id', type=str, default=None)
+    parser.add_argument('--checkpoint-path', type=str, default=None)
     args = parser.parse_args()
     if not args.pretrain ^ args.finetune:
         raise ValueError('Either pretrain or finetune should be set.')
-    main(args)
+
+    # Delete arguments that are not set so that they won't override the config file
+    if not args.checkpoint_path:
+        del args.checkpoint_path
+
+    loaded_args = load_args(config_path=args.config, profile=args.config_profile)
+    loaded_args.__dict__.update(args.__dict__)
+
+    main(loaded_args)

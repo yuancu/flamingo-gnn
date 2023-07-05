@@ -116,9 +116,12 @@ def main(args):
     run_name = f"{args.run_name}-{now}"
     offline = args.wandb_mode in ['offline', 'disabled']
     Path(args.log_dir).mkdir(parents=True, exist_ok=True)
+    wandb_kwargs = {}
+    if args.wandb_id:
+        wandb_kwargs['id'] = args.wandb_id
     wandb_logger = WandbLogger(project=args.wandb_project, offline=offline, name=run_name,
-                               group=config_profile, save_dir=args.log_dir)
-    wandb_logger.experiment.config.update(vars(args))
+                               group=config_profile, save_dir=args.log_dir, **wandb_kwargs)
+    wandb_logger.experiment.config.update(vars(args), allow_val_change=True)
 
     # 5. Create pytorch lightning model
     if multiple_choice:
@@ -139,7 +142,7 @@ def main(args):
     # 7. Create trainer
     optional_kwargs = {}
     if fp16:
-        optional_kwargs['precision'] = 16
+        optional_kwargs['precision'] = '16-mixed'
     trainer = pl.Trainer(max_epochs=args.n_epochs, fast_dev_run=args.fast_dev_run,
                          default_root_dir=os.path.join(args.save_dir, args.run_name),
                          accelerator='gpu', strategy=args.strategy, logger=wandb_logger,
@@ -175,7 +178,13 @@ if __name__ == '__main__':
     parser.add_argument('--devices', type=int, default=1, help='Number of devices to use.')
     parser.add_argument('--fp16', action='store_true', help='Whether to use fp16.')
     parser.add_argument('--tune-lr', action='store_true', help='Whether to tune learning rate.')
+    parser.add_argument('--wandb-id', type=str, default=None)
+    parser.add_argument('--checkpoint-path', type=str, default=None)
     args = parser.parse_args()
+
+    # Delete arguments that are not set so that they won't override the config file
+    if not args.checkpoint_path:
+        del args.checkpoint_path
 
     loaded_args = load_args(config_path=args.config, profile=args.config_profile)
     loaded_args.__dict__.update(args.__dict__)
