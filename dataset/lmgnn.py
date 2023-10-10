@@ -285,7 +285,7 @@ class LMGNNDataset(Dataset):
                 examples.append(
                     InputExample(
                         example_id=item["id"],
-                        contexts=item["context"],
+                        contexts="" if "context" not in item else item["context"],
                         question=item["question"],
                         endings=item["answers"],
                         label=-100

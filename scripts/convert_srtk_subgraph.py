@@ -34,6 +34,7 @@ from tqdm import tqdm
 def create_adjacency_matrix(triplets, relation2id, entity2id):
     """Create a sparse adjacency matrix of shape (all_rel * n_node, n_node) from the list of triplets.
     Value one indicates the existence of an edge, while value zero indicates the absence of an edge.
+
     Args:
         edges: list[tuple]
             list of (head, relation, tail) triplets, where the head is always wikidata entity, while the tail is
@@ -115,7 +116,8 @@ def main(args):
     filter_stats = []
     for subgraph in tqdm(subgraphs, total=total, desc="Creating subgraph pickles"):
         sample_id = subgraph['id']
-        adj, related_nodes, qmask, amask, filter_stat = create_subgraph_entry(subgraph['triplets'], relation2id, entity2id)
+        triplets = subgraph['triplets'][:args.max_triplets]
+        adj, related_nodes, qmask, amask, filter_stat = create_subgraph_entry(triplets, relation2id, entity2id)
         filter_stats.append(filter_stat)
         # Save the adjacency matrix
         with open(adjacency_dir / f'{sample_id}.pkl', 'wb') as f:
@@ -134,6 +136,7 @@ if __name__ == '__main__':
     parser.add_argument('-o', '--output-dir', required=True, help='path to the output adjacency directory')
     parser.add_argument('--relation2id', type=str, required=True, help='path to the relation2id pickle file')
     parser.add_argument('--entity2id', type=str, required=True, help='path to the entity2id pickle file')
+    parser.add_argument('--max-triplets', type=int, default=1000, help='maximum number of triplets per subgraph')
     args = parser.parse_args()
 
     main(args)
