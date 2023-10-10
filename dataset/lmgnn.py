@@ -285,7 +285,7 @@ class LMGNNDataset(Dataset):
                 examples.append(
                     InputExample(
                         example_id=item["id"],
-                        contexts=item["context"],
+                        contexts="" if "context" not in item else item["context"],
                         question=item["question"],
                         endings=item["answers"],
                         label=-100
@@ -686,3 +686,25 @@ def load_data(args, corrupt=False, dummy_graph=False, num_workers=1,
     train_dataloader = DataLoader(train_dataset, collate_fn=train_collator, batch_size=args.batch_size,num_workers=num_workers)
     validation_dataloader = DataLoader(validation_dataset, collate_fn=val_collator, batch_size=args.batch_size, num_workers=num_workers)
     return train_dataloader, validation_dataloader
+
+def load_test_data(args, dummy_graph=False, num_workers=1,
+                   test_kwargs={'encoder_input': 'contextualized_question', 'decoder_label': 'raw_answers'}):
+    num_relations = args.num_relations
+    model_name = args.encoder_name_or_path
+    max_seq_length = args.max_seq_len
+    prefix_ratio = float(args.prefix_ratio)
+    validation_dataset = LMGNNDataset(
+        statement_path=args.dev_statements,
+        adj_path=args.dev_adj,
+        num_relations=num_relations,
+        model_name=model_name,
+        max_seq_length=max_seq_length,
+        prefix_ratio=prefix_ratio,
+        **test_kwargs)
+    test_collator = T5GNNDataCollator(
+        tokenizer=validation_dataset.tokenizer,
+        corrupt_text=False,
+        dummy_graph=dummy_graph,
+        return_raw_answers='raw_answers',)
+    test_dataloader = DataLoader(validation_dataset, collate_fn=test_collator, batch_size=args.batch_size, num_workers=num_workers)
+    return test_dataloader

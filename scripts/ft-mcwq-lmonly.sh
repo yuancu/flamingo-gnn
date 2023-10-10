@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 #SBATCH --job-name ftlm-mcwq
 #SBATCH --output=runs/R-%x.%j.out
 #SBATCH --ntasks=1

@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 export TOKENIZERS_PARALLELISM=true
 export WANDB__SERVICE_WAIT=300
 

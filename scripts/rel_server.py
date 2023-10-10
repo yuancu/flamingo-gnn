@@ -13,12 +13,12 @@ from REL.entity_disambiguation import EntityDisambiguation
 from REL.ner import load_flair_ner
 from REL.server import make_handler
 
-BASE_URL = 'data/rel'
+BASE_URL = 'resources/rel'
 WIKI_VERSION = "wiki_2019"
 
 config = {
     "mode": "eval",
-    "model_path": "data/rel/ed-wiki-2019/model",  # or alias, see also tutorial 7: custom models
+    "model_path": BASE_URL + "/ed-wiki-2019/model",  # or alias, see also tutorial 7: custom models
 }
 
 model = EntityDisambiguation(BASE_URL, WIKI_VERSION, config)
