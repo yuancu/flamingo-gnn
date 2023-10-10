@@ -24,7 +24,7 @@ config = {
 model = EntityDisambiguation(BASE_URL, WIKI_VERSION, config)
 
 # Using Flair:
-tagger_ner = load_flair_ner("ner-fast")
+tagger_ner = load_flair_ner("ner-fast-with-lowercase")
 
 host = "127.0.0.1"
 port = 1235

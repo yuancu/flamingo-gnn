@@ -168,8 +168,8 @@ finetune_mcwq_lmonly_filtered: &finetune-mcwq-lmonly-filtered
   <<: *finetune-mcwq
   optim:
     <<: *optim-finetune-mcwq
-    batch_size: 64
-    max_seq_length: 128
+    batch_size: 128
+    max_seq_len: 128
     learning_rate: 0.001
   data:
     <<: *data-default
@@ -226,5 +226,3 @@ debug_ddp:
     <<: *misc-default
     no_graph: True
     fast_dev_run: True
-
-
