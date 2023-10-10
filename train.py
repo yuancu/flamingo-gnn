@@ -184,4 +184,11 @@ if __name__ == '__main__':
     loaded_args = load_args(config_path=args.config, profile=args.config_profile)
     loaded_args.__dict__.update(args.__dict__)
 
+    # if '.wandbtoken' file exists, read it and set WANDB_API_KEY to it
+    if os.path.exists('.wandbtoken'):
+        with open('.wandbtoken', encoding='utf-8') as f:
+            wandb_api_key = f.read().strip()
+            print(f"Setting WANDB_API_KEY to {wandb_api_key}")
+            os.environ['WANDB_API_KEY'] = wandb_api_key
+
     main(loaded_args)
