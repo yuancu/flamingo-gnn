@@ -67,6 +67,10 @@ wikidata5m: &wikidata5m
   num_relations: 828  # number of relations for wikidata5m
   ent_emb_paths: data/wikidata5m/entity_embeddings.npy
 
+wikidata5m_langemb: &wikidata5m-langemb
+  kg: wikidata5m
+  num_relations: 828
+  ent_emb_paths: data/wikidata5m/entity_embeddings_t5_base.npy
 
 gqa_fintune: &gqa-finetune
   dataset: gqa
@@ -78,7 +82,18 @@ gqa_fintune: &gqa-finetune
   test_adj: data/gqa/adj/test
   legacy_adj: False
 
+# Retrieved graphs (instead of gold ones)
+gqa_retrieve: &gqa-retrieve
+  dataset: gqa
+  train_statements: data/gqa/statement/train.jsonl
+  train_adj: data/gqa-retrieval/adj/train
+  dev_statements: data/gqa/statement/validation.jsonl
+  dev_adj: data/gqa-retrieval/adj/validation
+  test_statements: data/gqa/statement/test.jsonl
+  test_adj: data/gqa-retrieval/adj/test
+  legacy_adj: False
 
+# F. warmup & frozen LM
 finetune_gqa: &finetune-gqa
   <<: *default
   model:
@@ -86,7 +101,7 @@ finetune_gqa: &finetune-gqa
     k: 8
     gnn_dim: 256
     ie_dim: 256
-  data:
+  data: &data-finetune-gqa
     <<: *data-default
     <<: *wikidata5m
     <<: *gqa-finetune
@@ -98,10 +113,73 @@ finetune_gqa: &finetune-gqa
     freeze_lm: True
     freeze_non_lm: False
     learning_rate: 0.0005
-    n_epochs: 100
+    n_epochs: 120
   misc:
     <<: *misc-default
     checkpoint_path: artifacts/pretrained/lit_wikitop_epoch24.ckpt
+
+# C. No warmup, no frozen LM
+finetune_gqa_xwxf: &finetune-gqa-xwxf
+  <<: *finetune-gqa
+  optim: &optim-finetune-gqa-xwxf
+    <<: *optim-finetune-gqa
+    freeze_lm: False
+  misc:
+    <<: *misc-default
+
+# D. Warmup, no frozen LM
+finetune_gqa_xf: &finetune-gqa-xf
+  <<: *finetune-gqa
+  optim: &optim-finetune-gqa-xf
+    <<: *optim-finetune-gqa
+    freeze_lm: False
+
+# E. No warmup, frozen LM
+finetune_gqa_xw: &finetune-gqa-xw
+  <<: *finetune-gqa
+  misc:
+    <<: *misc-default
+
+
+# F-Ret: warmup & frozen LM
+finetune_gqa_ret:
+  <<: *finetune-gqa
+  data:
+    <<: *data-finetune-gqa
+    <<: *gqa-retrieve
+  optim:
+    <<: *optim-finetune-gqa
+    batch_size: 128
+
+# C-Ret: No warmup, no frozen LM
+finetune_gqa_xwxf_ret:
+  <<: *finetune-gqa-xwxf
+  data:
+    <<: *data-finetune-gqa
+    <<: *gqa-retrieve
+  optim:
+    <<: *optim-finetune-gqa-xwxf
+    batch_size: 96
+
+# D-Ret: Warmup, no frozen LM
+finetune_gqa_xf_ret:
+  <<: *finetune-gqa-xf
+  data:
+    <<: *data-finetune-gqa
+    <<: *gqa-retrieve
+  optim:
+    <<: *optim-finetune-gqa-xf
+    batch_size: 96
+
+# E-Ret: No warmup, frozen LM
+finetune_gqa_xw_ret:
+  <<: *finetune-gqa-xw
+  data:
+    <<: *data-finetune-gqa
+    <<: *gqa-retrieve
+  optim:
+    <<: *optim-finetune-gqa
+    batch_size: 128
 
 
 finetune_gqa_lmonly: &finetune-gqa-lmonly
@@ -134,6 +212,19 @@ finetune_gqa_lmonly_contextualized: &finetune-gqa-lmonly-contextualized
     decoder_label: answer
 
 
+finetune_gqa_langemb:
+  <<: *finetune-gqa
+  data:
+    <<: *data-default
+    <<: *wikidata5m-langemb
+    <<: *gqa-finetune
+    encoder_input: question
+    decoder_label: answer
+  misc:
+    <<: *misc-default
+    checkpoint_path: artifacts/pretrained/lit_wikitop_e20_langemb.ckpt
+
+
 test_gqa:
   <<: *finetune-gqa
   misc:
@@ -153,4 +244,3 @@ test_gqa_lmonly_contextualized:
     <<: *misc-default
     no_graph: True
     checkpoint_path: saved_models/gqa-lmonly-ctx-pfeiffer-epoch=80-step=4293.ckpt
-
