@@ -1,4 +1,4 @@
-"""Pretrain the T5-based encoder-decoder architectured dragon model.
+"""Evaluate the T5-based encoder-decoder architectured CrossGNN model.
 """
 import os
 from argparse import ArgumentParser
@@ -61,7 +61,7 @@ def main(args):
             args.checkpoint_path, strict=False,
             args=args, encoder=encoder, decoder=decoder,
             freeze_lm=args.freeze_lm, freeze_non_lm=args.freeze_non_lm,
-            map_location=args.accelerator,
+            map_location=encoder.device,
             mode='finetune'
         )
     elif args.model == 't5':
@@ -71,7 +71,7 @@ def main(args):
             t5.add_adapter("adapter", config=config)
             t5.train_adapter("adapter")
         model = LitT5.load_from_checkpoint(args.checkpoint_path, strict=False, args=args,
-                                           model=t5, map_location=args.accelerator)
+                                           model=t5, map_location=t5.device)
     else:
         raise ValueError(f"Unknown model type: {args.model}")
 

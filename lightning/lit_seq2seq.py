@@ -9,6 +9,7 @@ from deepspeed.ops.adam import DeepSpeedCPUAdam
 from models.t5 import T5Seq2Seq
 from evaluation.squad import compute_score
 from evaluation.bleu import compute_bleu
+from evaluation.sas import compute_sas
 
 
 def evaluate(predictions, references):
@@ -94,14 +95,7 @@ class LitT5Seq2Seq(pl.LightningModule):
         self.log('train_loss', loss)
         return loss
 
-    def validation_step(self, batch, batch_idx):
-        if self.mode == 'pretrain':
-            output = self.batch_forward(batch)
-            loss = output.loss
-            perplexity = torch.exp(loss)
-            self.log('perplexity', perplexity)
-            return {'perplexity': perplexity}
-
+    def validate(self, batch):
         input_ids, attention_mask, answers, \
             node_ids, node_type_ids, adj_lengths, \
             edge_index, edge_type = batch
@@ -120,6 +114,17 @@ class LitT5Seq2Seq(pl.LightningModule):
         predictions = tokenizer.batch_decode(generated)
         predictions = [p.replace(tokenizer.pad_token, '').replace(tokenizer.eos_token, '').strip() for p in predictions]
         scores = self.evaluator(predictions, gold_answers)
+        return scores, predictions, gold_answers
+
+    def validation_step(self, batch, batch_idx):
+        if self.mode == 'pretrain':
+            output = self.batch_forward(batch)
+            loss = output.loss
+            perplexity = torch.exp(loss)
+            self.log('perplexity', perplexity)
+            return {'perplexity': perplexity}
+
+        scores, predictions, gold_answers = self.validate(batch)
         self.log_dict(scores)
         if self.return_val_predictions:
             return {
@@ -153,8 +158,18 @@ class LitT5Seq2Seq(pl.LightningModule):
         self.validation_step_outputs.clear()
         return scores
 
-    def test_step(self, *args, **kwargs):
-        return self.validation_step(*args, **kwargs)
+    def test_step(self, batch, batch_idx):
+        scores, predictions, references = self.validate(batch)
+        # Compute sas in addition to the other metrics
+        scores["sas"] = compute_sas(predictions, references)["sas"]
+        self.log_dict(scores)
+        if self.return_val_predictions:
+            return {
+                "predictions": predictions,
+                "references": references,
+                **scores
+            }
+        return scores
 
     def forward(self, *args, **kwargs):
         return self.model.forward(*args, **kwargs)

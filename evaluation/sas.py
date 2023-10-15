@@ -1,21 +1,19 @@
-from haystack.eval import EvalAnswers
+import numpy as np
+from haystack.modeling.evaluation.metrics import semantic_answer_similarity
 
-# model_path = 'sentence-transformers/paraphrase-multilingual-mpnet-base-v2'
-model_path = 'cross-encoder/stsb-roberta-large'
-eval_reader = EvalAnswers(sas_model=model_path)
+model_path = 'sentence-transformers/paraphrase-multilingual-mpnet-base-v2'
 
 def compute_sas(predictions, answers):
     """
     Compute SAS score of the predictions against references.
     """
-    score = eval_reader.eval(
-        answers=answers,
+    score = semantic_answer_similarity(
+        gold_labels=answers,
         predictions=predictions,
-        top_k=1,
-        match_type="string",
-        return_preds=True,
+        sas_model_name_or_path=model_path
     )
-    return {'sas': score['sas'] }
+    top_1_sas = np.mean(score[0])
+    return {'sas': top_1_sas }
 
 if __name__ == '__main__':
     predictions = [
