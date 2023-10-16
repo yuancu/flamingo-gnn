@@ -23,4 +23,4 @@ export TOKENIZERS_PARALLELISM=true
 
 # unfrozen
 python -u train_lm.py --config configs/gqa.yaml --config-profile gqaret_b_lmctx \
-    --run-name gqa-b-ret  --num-trainable-blocks -1 --fp16
+    --run-name gqa-b-ret  --num-trainable-blocks -1 --fp16 --tune-lr

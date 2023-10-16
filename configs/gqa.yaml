@@ -216,6 +216,7 @@ gqaret_f_wf:
   optim:
     <<: *optim-finetune-gqa
     batch_size: 96
+    learning_rate: 0.002754228703338169
 
 # B. langauge only & contexutalized
 # Verbalize subgraphs as context for LM only finetuning
