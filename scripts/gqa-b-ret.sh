@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Finetune on Multilingual Complex Wikidata Questions
+# Finetune on Graph Question Answering (GQA) dataset
 #
-#SBATCH --job-name gqa-adapter
+#SBATCH --job-name gqa-lmctx
 #SBATCH --output=runs/R-%x.%j.out
 #SBATCH --ntasks=1
 #SBATCH --time=24:00:00
@@ -20,7 +20,7 @@ python -c "import torch; print('device_count:', torch.cuda.device_count())"
 python -c "import torch_geometric; print('torch_geometric version:', torch_geometric.__version__)"
 
 export TOKENIZERS_PARALLELISM=true
-export WANDB__SERVICE_WAIT=300
 
-# run pretrain
-python -u train.py --finetune --config configs/gqa.yaml --config-profile gqa_f_wf --run-name ft-gqa-adapter --tune-lr --add-adapter
+# unfrozen
+python -u train_lm.py --config configs/gqa.yaml --config-profile gqaret_b_lmctx \
+    --run-name gqa-b-ret  --num-trainable-blocks -1 --fp16

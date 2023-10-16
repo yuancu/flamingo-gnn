@@ -1,7 +1,6 @@
 default: &default
   model: &model-default
     k: 5  # The number of GNN layers
-    att_head_num: 2  # number of attention heads of the final graph nodes' pooling
     gnn_dim: 100  # dimension of the GNN layers
     freeze_ent_emb: True  # Whether to freeze the entity embedding layer.
     ie_dim: 200  # number of the hidden units of the MInt operator.
@@ -85,16 +84,16 @@ gqa_fintune: &gqa-finetune
 # Retrieved graphs (instead of gold ones)
 gqa_retrieve: &gqa-retrieve
   dataset: gqa
-  train_statements: data/gqa/statement/train.jsonl
+  train_statements: data/gqa-retrieval/statement/train.jsonl
   train_adj: data/gqa-retrieval/adj/train
-  dev_statements: data/gqa/statement/validation.jsonl
+  dev_statements: data/gqa-retrieval/statement/validation.jsonl
   dev_adj: data/gqa-retrieval/adj/validation
-  test_statements: data/gqa/statement/test.jsonl
+  test_statements: data/gqa-retrieval/statement/test.jsonl
   test_adj: data/gqa-retrieval/adj/test
   legacy_adj: False
 
 # F. warmup & frozen LM
-finetune_gqa: &finetune-gqa
+gqa_f_wf: &finetune-gqa
   <<: *default
   model:
     <<: *model-default
@@ -118,71 +117,8 @@ finetune_gqa: &finetune-gqa
     <<: *misc-default
     checkpoint_path: artifacts/pretrained/lit_wikitop_epoch24.ckpt
 
-# C. No warmup, no frozen LM
-finetune_gqa_xwxf: &finetune-gqa-xwxf
-  <<: *finetune-gqa
-  optim: &optim-finetune-gqa-xwxf
-    <<: *optim-finetune-gqa
-    freeze_lm: False
-  misc:
-    <<: *misc-default
-
-# D. Warmup, no frozen LM
-finetune_gqa_xf: &finetune-gqa-xf
-  <<: *finetune-gqa
-  optim: &optim-finetune-gqa-xf
-    <<: *optim-finetune-gqa
-    freeze_lm: False
-
-# E. No warmup, frozen LM
-finetune_gqa_xw: &finetune-gqa-xw
-  <<: *finetune-gqa
-  misc:
-    <<: *misc-default
-
-
-# F-Ret: warmup & frozen LM
-finetune_gqa_ret:
-  <<: *finetune-gqa
-  data:
-    <<: *data-finetune-gqa
-    <<: *gqa-retrieve
-  optim:
-    <<: *optim-finetune-gqa
-    batch_size: 128
-
-# C-Ret: No warmup, no frozen LM
-finetune_gqa_xwxf_ret:
-  <<: *finetune-gqa-xwxf
-  data:
-    <<: *data-finetune-gqa
-    <<: *gqa-retrieve
-  optim:
-    <<: *optim-finetune-gqa-xwxf
-    batch_size: 96
-
-# D-Ret: Warmup, no frozen LM
-finetune_gqa_xf_ret:
-  <<: *finetune-gqa-xf
-  data:
-    <<: *data-finetune-gqa
-    <<: *gqa-retrieve
-  optim:
-    <<: *optim-finetune-gqa-xf
-    batch_size: 96
-
-# E-Ret: No warmup, frozen LM
-finetune_gqa_xw_ret:
-  <<: *finetune-gqa-xw
-  data:
-    <<: *data-finetune-gqa
-    <<: *gqa-retrieve
-  optim:
-    <<: *optim-finetune-gqa
-    batch_size: 128
-
-
-finetune_gqa_lmonly: &finetune-gqa-lmonly
+# A. LM-only, without context
+gqa_a_lm: &finetune-gqa-lmonly
   <<: *finetune-gqa
   optim:
     <<: *optim-finetune-gqa
@@ -201,8 +137,89 @@ finetune_gqa_lmonly: &finetune-gqa-lmonly
     no_graph: True
 
 
+# C. No warmup, no frozen LM
+gqa_c_xwxf: &finetune-gqa-xwxf
+  <<: *finetune-gqa
+  optim: &optim-finetune-gqa-xwxf
+    <<: *optim-finetune-gqa
+    freeze_lm: False
+  misc:
+    <<: *misc-default
+
+# D. Warmup, no frozen LM
+gqa_d_xf: &finetune-gqa-xf
+  <<: *finetune-gqa
+  optim: &optim-finetune-gqa-xf
+    <<: *optim-finetune-gqa
+    freeze_lm: False
+
+# E. No warmup, frozen LM
+gqa_e_xw: &finetune-gqa-xw
+  <<: *finetune-gqa
+  misc:
+    <<: *misc-default
+
+
+
+# B-ret
+gqaret_b_lmctx: &finetune-gqa-ret-lmctx
+  <<: *finetune-gqa-lmonly
+  optim:
+    <<: *optim-finetune-gqa
+    batch_size: 128
+    max_seq_len: 512
+    learning_rate: 0.0001
+    freeze_lm: False
+  data:
+    <<: *data-default
+    <<: *wikidata5m
+    <<: *gqa-retrieval
+    encoder_input: contextualized_question
+    decoder_label: answer
+
+# C-Ret: No warmup, no frozen LM
+gqaret_c_xwxf:
+  <<: *finetune-gqa-xwxf
+  data:
+    <<: *data-finetune-gqa
+    <<: *gqa-retrieve
+  optim:
+    <<: *optim-finetune-gqa-xwxf
+    batch_size: 96
+
+# D-Ret: Warmup, no frozen LM
+gqaret_d_xf:
+  <<: *finetune-gqa-xf
+  data:
+    <<: *data-finetune-gqa
+    <<: *gqa-retrieve
+  optim:
+    <<: *optim-finetune-gqa-xf
+    batch_size: 96
+
+# E-Ret: No warmup, frozen LM
+gqaret_e_xw:
+  <<: *finetune-gqa-xw
+  data:
+    <<: *data-finetune-gqa
+    <<: *gqa-retrieve
+  optim:
+    <<: *optim-finetune-gqa
+    batch_size: 128
+
+# F-Ret: warmup & frozen LM
+gqaret_f_wf:
+  <<: *finetune-gqa
+  data:
+    <<: *data-finetune-gqa
+    <<: *gqa-retrieve
+  optim:
+    <<: *optim-finetune-gqa
+    batch_size: 96
+
+# B. langauge only & contexutalized
 # Verbalize subgraphs as context for LM only finetuning
-finetune_gqa_lmonly_contextualized: &finetune-gqa-lmonly-contextualized
+gqa_b_lmctx: &finetune-gqa-lmonly-contextualized
   <<: *finetune-gqa-lmonly
   data:
     <<: *data-default
@@ -212,7 +229,7 @@ finetune_gqa_lmonly_contextualized: &finetune-gqa-lmonly-contextualized
     decoder_label: answer
 
 
-finetune_gqa_langemb:
+gqa_langemb:
   <<: *finetune-gqa
   data:
     <<: *data-default

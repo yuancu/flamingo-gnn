@@ -24,5 +24,9 @@ export WANDB__SERVICE_WAIT=300
 
 
 # Experiment e: CrossGNN with FrozenLM (No warmup, freeze LM)
-python -u train.py --finetune --config configs/gqa.yaml --config-profile finetune_gqa_xw \
-    --run-name gqa-e-xw --tune-lr
+# python -u train.py --finetune --config configs/gqa.yaml --config-profile gqa_e_xw \
+#     --run-name gqa-e-xw --tune-lr
+
+# Test
+python -u eval.py --config configs/gqa.yaml --config-profile gqa_e_xw \
+    --run-name test-gqa-e --model t5-gnn --checkpoint-path logs/gqa/d9yavbbl/checkpoints/epoch=99-step=5300.ckpt

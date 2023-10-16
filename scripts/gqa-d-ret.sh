@@ -23,5 +23,9 @@ export TOKENIZERS_PARALLELISM=true
 export WANDB__SERVICE_WAIT=300
 
 # Experiment d: CrossGNN with Warmup (Warm up, No frozen)
-python -u train.py --finetune --config configs/gqa.yaml --config-profile finetune_gqa_xf_ret \
-    --run-name gqa-d-xf-ret --tune-lr
+# python -u train.py --finetune --config configs/gqa.yaml --config-profile gqaret_d_xf \
+#     --run-name gqa-d-xf-ret --tune-lr
+
+# Test
+python -u eval.py --config configs/gqa.yaml --config-profile gqaret_d_xf \
+    --run-name test-gqa-d-ret --model t5-gnn --checkpoint-path logs/gqa/4immse5f/checkpoints/epoch=61-step=4402.ckpt
