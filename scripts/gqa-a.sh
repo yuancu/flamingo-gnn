@@ -39,5 +39,5 @@ export TOKENIZERS_PARALLELISM=true
 #     --run-name ft-gqa-lmonly-pfeiffer  --num-trainable-blocks 0 --adapter pfeiffer --tune-lr
 
 # Test
-python -u eval.py --config configs/gqa.yaml --config-profile test_gqa_lmonly \
-    --run-name test-gqa-lmonly --model t5
+python -u eval.py --config configs/gqa.yaml --config-profile gqa_a_lm \
+    --run-name test-gqa-a --model t5 --checkpoint-path logs/gqa/eoqaf32k/checkpoints/epoch=98-step=5247.ckpt
