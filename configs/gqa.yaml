@@ -215,7 +215,7 @@ gqaret_f_wf:
     <<: *gqa-retrieve
   optim:
     <<: *optim-finetune-gqa
-    batch_size: 96
+    batch_size: 256
     learning_rate: 0.002754228703338169
 
 # B. langauge only & contexutalized

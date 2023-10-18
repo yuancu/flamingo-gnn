@@ -19,6 +19,7 @@ from models.flamingo import FlamingoConfig
 from models.t5 import FlamingoT5Decoder
 from utils.common import load_args
 from utils.model_utils import construct_encoder
+from utils.wandb import set_wandb_api_key_from_file
 
 
 def main(args):
@@ -185,10 +186,6 @@ if __name__ == '__main__':
     loaded_args.__dict__.update(args.__dict__)
 
     # if '.wandbtoken' file exists, read it and set WANDB_API_KEY to it
-    if os.path.exists('.wandbtoken'):
-        with open('.wandbtoken', encoding='utf-8') as f:
-            wandb_api_key = f.read().strip()
-            print(f"Setting WANDB_API_KEY to {wandb_api_key}")
-            os.environ['WANDB_API_KEY'] = wandb_api_key
+    set_wandb_api_key_from_file('.wandbtoken')
 
     main(loaded_args)

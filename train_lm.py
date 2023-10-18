@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytorch_lightning as pl
 import torch
-import wandb
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateFinder
 from pytorch_lightning.loggers import WandbLogger
 from transformers import AutoModelForSeq2SeqLM
@@ -18,6 +17,7 @@ from dataset.multiple_choice import load_data as load_multiple_choice_data
 from lightning.lit_t5 import LitT5
 from lightning.lit_multiple_choice import LitT5LMForMultipleChoice
 from utils.common import load_args
+from utils.wandb import set_wandb_api_key_from_file
 
 
 def get_adapter_config(adapter_name):
@@ -190,10 +190,6 @@ if __name__ == '__main__':
     loaded_args.__dict__.update(args.__dict__)
 
     # if '.wandbtoken' file exists, read it and set WANDB_API_KEY to it
-    if os.path.exists('.wandbtoken'):
-        with open('.wandbtoken', encoding='utf-8') as f:
-            wandb_api_key = f.read().strip()
-            print(f"Setting WANDB_API_KEY to {wandb_api_key}")
-            os.environ['WANDB_API_KEY'] = wandb_api_key
+    set_wandb_api_key_from_file('.wandbtoken')
 
     main(loaded_args)

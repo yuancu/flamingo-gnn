@@ -9,7 +9,6 @@ from deepspeed.ops.adam import DeepSpeedCPUAdam
 from models.t5 import T5Seq2Seq
 from evaluation.squad import compute_score
 from evaluation.bleu import compute_bleu
-from evaluation.sas import compute_sas
 
 
 def evaluate(predictions, references):
@@ -161,7 +160,7 @@ class LitT5Seq2Seq(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         scores, predictions, references = self.validate(batch)
         # Compute sas in addition to the other metrics
-        scores["sas"] = compute_sas(predictions, references)["sas"]
+        # scores["sas"] = compute_sas(predictions, references)["sas"]
         self.log_dict(scores)
         if self.return_val_predictions:
             return {
