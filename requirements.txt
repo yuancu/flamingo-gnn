@@ -13,4 +13,3 @@ rouge_score
 sentencepiece
 torch
 tqdm
-transformers

@@ -166,8 +166,8 @@ gqaret_b_lmctx: &finetune-gqa-ret-lmctx
   <<: *finetune-gqa-lmonly
   optim:
     <<: *optim-finetune-gqa
-    batch_size: 64
-    max_seq_len: 512
+    batch_size: 32
+    max_seq_len: 384
     learning_rate: 0.0001
     freeze_lm: False
   data:

@@ -22,9 +22,9 @@ python -c "import torch_geometric; print('torch_geometric version:', torch_geome
 export TOKENIZERS_PARALLELISM=true
 
 # unfrozen
-# python -u train_lm.py --config configs/gqa.yaml --config-profile gqaret_b_lmctx \
-#     --run-name gqa-b-ret  --num-trainable-blocks -1
+# python -u train_lm.py --config configs/gqa.yaml --config-profile gqa_b_lmctx \
+#     --run-name gqa-b  --num-trainable-blocks -1
 
 # Test
-python -u eval.py --config configs/gqa.yaml --config-profile gqaret_b_lmctx \
-    --run-name test-gqa-b-ret --model t5 --checkpoint-path logs/gqa/bejz5tj0/checkpoints/epoch=115-step=24592.ckpt
+python -u eval.py --config configs/gqa.yaml --config-profile gqa_b_lmctx \
+    --run-name test-gqa-b --model t5 --checkpoint-path logs/gqa/mhxl78fv/checkpoints/epoch=1-step=106.ckpt
